@@ -1,8 +1,8 @@
 import Foundation
 
 // MARK: - Diff Scoring Service
-/// Implements text comparison using a word-level diff algorithm
-/// to compute accuracy scores between expected and actual text.
+/// Implements text comparison using a character-level LCS diff algorithm
+/// optimized for Chinese text (where whitespace-based word splitting is unreliable).
 final class DiffScoringService: ScoringServiceProtocol {
 
     // MARK: - ScoringServiceProtocol
@@ -11,12 +11,19 @@ final class DiffScoringService: ScoringServiceProtocol {
         let normalizedExpected = normalizeText(expected)
         let normalizedActual = normalizeText(actual)
 
-        // Split into words for comparison
-        let expectedWords = normalizedExpected.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-        let actualWords = normalizedActual.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        // Character-level diff for Chinese-friendly comparison
+        let expectedChars = Array(normalizedExpected)
+        let actualChars = Array(normalizedActual)
 
-        let differences = computeDifferences(expectedWords: expectedWords, actualWords: actualWords)
-        let score = calculateScore(differences: differences, expectedWordCount: expectedWords.count)
+        let differences = computeDifferences(
+            expectedChars: expectedChars,
+            actualChars: actualChars
+        )
+        let score = calculateScore(
+            differences: differences,
+            expectedCount: expectedChars.count,
+            actualCount: actualChars.count
+        )
 
         return DiffResult(
             differences: differences,
@@ -33,88 +40,163 @@ final class DiffScoringService: ScoringServiceProtocol {
     }
 
     // MARK: - Text Normalization
-    /// Normalizes text for comparison: trims whitespace, collapses newlines,
-    /// removes punctuation edge cases.
+    /// Normalizes text for comparison: trims whitespace, collapses spaces,
+    /// and normalizes Chinese punctuation to ASCII equivalents.
     private func normalizeText(_ text: String) -> String {
         var result = text
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
 
-        // Normalize common Chinese punctuation
+        // Normalize common Chinese punctuation to ASCII for fairer comparison
         result = result.replacingOccurrences(of: "，", with: ",")
         result = result.replacingOccurrences(of: "。", with: ".")
         result = result.replacingOccurrences(of: "；", with: ";")
         result = result.replacingOccurrences(of: "：", with: ":")
-        result = result.replacingOccurrences(of: "\"", with: "\"")
-        result = result.replacingOccurrences(of: "\"", with: "\"")
-        result = result.replacingOccurrences(of: "'", with: "'")
-        result = result.replacingOccurrences(of: "'", with: "'")
+        result = result.replacingOccurrences(of: "？", with: "?")
+        result = result.replacingOccurrences(of: "！", with: "!")
+        result = result.replacingOccurrences(of: "\u{201c}", with: "\"") // "
+        result = result.replacingOccurrences(of: "\u{201d}", with: "\"") // "
+        result = result.replacingOccurrences(of: "\u{2018}", with: "'")  // '
+        result = result.replacingOccurrences(of: "\u{2019}", with: "'")  // '
+        result = result.replacingOccurrences(of: "（", with: "(")
+        result = result.replacingOccurrences(of: "）", with: ")")
 
         return result
     }
 
-    // MARK: - Diff Algorithm
-    /// Computes word-level differences using a simplified LCS-based approach.
-    private func computeDifferences(expectedWords: [String], actualWords: [String]) -> [DiffSegment] {
-        let lcs = computeLCS(expectedWords, actualWords)
-        var differences: [DiffSegment] = []
+    // MARK: - Character-Level Diff Algorithm
+    /// Computes character-level differences using LCS (Longest Common Subsequence).
+    /// Merges consecutive same-type segments for cleaner output.
+    private func computeDifferences(
+        expectedChars: [Character],
+        actualChars: [Character]
+    ) -> [DiffSegment] {
+        let lcs = computeLCS(expectedChars, actualChars)
+
+        // Step 1: Build raw character-level diffs
+        var rawSegments: [DiffSegment] = []
         var expIdx = 0
         var actIdx = 0
         var lcsIdx = 0
 
-        while expIdx < expectedWords.count || actIdx < actualWords.count {
+        while expIdx < expectedChars.count || actIdx < actualChars.count {
             if lcsIdx < lcs.count,
-               expIdx < expectedWords.count,
-               actIdx < actualWords.count,
+               expIdx < expectedChars.count,
+               actIdx < actualChars.count,
                lcs[lcsIdx] == (expIdx, actIdx) {
-                // Correct word
-                let range = wordRange(expectedWords[expIdx], in: expectedWords, from: expIdx)
+                // Correct character
                 let seg = DiffSegment(
                     type: .correct,
-                    expectedSegment: expectedWords[expIdx],
-                    actualSegment: actualWords[actIdx],
+                    expectedSegment: String(expectedChars[expIdx]),
+                    actualSegment: String(actualChars[actIdx]),
                     expectedRange: NSRange(location: expIdx, length: 1),
                     actualRange: NSRange(location: actIdx, length: 1)
                 )
-                differences.append(seg)
+                rawSegments.append(seg)
                 expIdx += 1
                 actIdx += 1
                 lcsIdx += 1
-            } else if expIdx < expectedWords.count,
+            } else if expIdx < expectedChars.count,
+                      actIdx < actualChars.count,
+                      lcsIdx < lcs.count,
+                      lcs[lcsIdx].0 != expIdx,
+                      lcs[lcsIdx].1 != actIdx {
+                // Both sides have characters that don't match — treat as substitution (wrong)
+                let seg = DiffSegment(
+                    type: .wrong,
+                    expectedSegment: String(expectedChars[expIdx]),
+                    actualSegment: String(actualChars[actIdx]),
+                    expectedRange: NSRange(location: expIdx, length: 1),
+                    actualRange: NSRange(location: actIdx, length: 1)
+                )
+                rawSegments.append(seg)
+                expIdx += 1
+                actIdx += 1
+            } else if expIdx < expectedChars.count,
                       (lcsIdx >= lcs.count || lcs[lcsIdx].0 != expIdx) {
-                // Missing word (expected but not in actual)
+                // Missing character (in expected but not in actual)
                 let seg = DiffSegment(
                     type: .missing,
-                    expectedSegment: expectedWords[expIdx],
+                    expectedSegment: String(expectedChars[expIdx]),
                     actualSegment: nil,
                     expectedRange: NSRange(location: expIdx, length: 1),
                     actualRange: NSRange(location: actIdx, length: 0)
                 )
-                differences.append(seg)
+                rawSegments.append(seg)
                 expIdx += 1
-            } else if actIdx < actualWords.count {
-                // Extra word (in actual but not expected)
+            } else if actIdx < actualChars.count {
+                // Extra character (in actual but not in expected)
                 let seg = DiffSegment(
                     type: .extra,
                     expectedSegment: nil,
-                    actualSegment: actualWords[actIdx],
+                    actualSegment: String(actualChars[actIdx]),
                     expectedRange: NSRange(location: expIdx, length: 0),
                     actualRange: NSRange(location: actIdx, length: 1)
                 )
-                differences.append(seg)
+                rawSegments.append(seg)
                 actIdx += 1
             }
         }
 
-        return differences
+        // Step 2: Merge consecutive segments of the same type
+        return mergeConsecutiveSegments(rawSegments)
     }
 
-    /// Computes the Longest Common Subsequence of word indices.
-    private func computeLCS(_ a: [String], _ b: [String]) -> [(Int, Int)] {
+    /// Merges consecutive diff segments of the same type into larger segments
+    /// so the result view shows grouped diffs instead of individual characters.
+    private func mergeConsecutiveSegments(_ segments: [DiffSegment]) -> [DiffSegment] {
+        guard !segments.isEmpty else { return [] }
+
+        var merged: [DiffSegment] = []
+        var current = segments[0]
+
+        for i in 1..<segments.count {
+            let next = segments[i]
+            if current.type == next.type {
+                // Merge into current
+                let mergedExpected = joinSegments(current.expectedSegment, next.expectedSegment)
+                let mergedActual = joinSegments(current.actualSegment, next.actualSegment)
+                let mergedExpRange = NSRange(
+                    location: current.expectedRange.location,
+                    length: current.expectedRange.length + next.expectedRange.length
+                )
+                let mergedActRange = NSRange(
+                    location: current.actualRange.location,
+                    length: current.actualRange.length + next.actualRange.length
+                )
+                current = DiffSegment(
+                    type: current.type,
+                    expectedSegment: mergedExpected,
+                    actualSegment: mergedActual,
+                    expectedRange: mergedExpRange,
+                    actualRange: mergedActRange
+                )
+            } else {
+                merged.append(current)
+                current = next
+            }
+        }
+        merged.append(current)
+        return merged
+    }
+
+    private func joinSegments(_ a: String?, _ b: String?) -> String? {
+        switch (a, b) {
+        case let (.some(s1), .some(s2)): return s1 + s2
+        case let (.some(s1), nil): return s1
+        case let (nil, .some(s2)): return s2
+        case (nil, nil): return nil
+        }
+    }
+
+    // MARK: - LCS Algorithm (Character-Level)
+    /// Computes the Longest Common Subsequence at character granularity.
+    /// Returns an array of (expectedIndex, actualIndex) matched pairs.
+    private func computeLCS(_ a: [Character], _ b: [Character]) -> [(Int, Int)] {
         let m = a.count
         let n = b.count
 
-        // Build DP table
+        // DP table
         var dp = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
         for i in 1...m {
             for j in 1...n {
@@ -126,7 +208,7 @@ final class DiffScoringService: ScoringServiceProtocol {
             }
         }
 
-        // Backtrack to find LCS
+        // Backtrack to build LCS
         var result: [(Int, Int)] = []
         var i = m, j = n
         while i > 0 && j > 0 {
@@ -144,21 +226,18 @@ final class DiffScoringService: ScoringServiceProtocol {
         return result.reversed()
     }
 
-    /// Returns the word range in a joined context.
-    private func wordRange(_ word: String, in words: [String], from index: Int) -> NSRange {
-        var loc = 0
-        for i in 0..<index {
-            loc += words[i].count + 1 // +1 for space
-        }
-        return NSRange(location: loc, length: word.count)
-    }
-
     // MARK: - Score Calculation
-    /// Calculates accuracy score as a percentage.
-    /// Score = (correct_words / max(expected_words, actual_words)) * 100
-    private func calculateScore(differences: [DiffSegment], expectedWordCount: Int) -> Double {
-        let correctCount = differences.filter { $0.type == .correct }.count
-        let denominator = max(expectedWordCount, 1)
+    /// Calculates accuracy score at character level.
+    /// Score = (correct_characters / max(expected_count, actual_count)) * 100
+    private func calculateScore(
+        differences: [DiffSegment],
+        expectedCount: Int,
+        actualCount: Int
+    ) -> Double {
+        let correctCount = differences
+            .filter { $0.type == .correct }
+            .reduce(0) { $0 + $1.expectedRange.length }
+        let denominator = max(expectedCount, actualCount, 1)
         let rawScore = Double(correctCount) / Double(denominator) * 100.0
         return min(max(rawScore, 0.0), 100.0)
     }
