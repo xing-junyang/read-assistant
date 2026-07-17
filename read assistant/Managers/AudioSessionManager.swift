@@ -17,7 +17,7 @@ final class AudioSessionManager {
     /// Requests recording permission from the user.
     func requestRecordingPermission(completion: @escaping (Bool) -> Void) {
         // AVAudioSessionRecordPermission available iOS 8+
-        switch session.recordPermission() {
+        switch session.recordPermission {
         case .granted:
             completion(true)
         case .denied:
@@ -52,6 +52,6 @@ final class AudioSessionManager {
 
     /// Returns whether recording permission is granted.
     var hasRecordingPermission: Bool {
-        return session.recordPermission() == .granted
+        return session.recordPermission == .granted
     }
 }
