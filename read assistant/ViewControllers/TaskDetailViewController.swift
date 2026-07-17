@@ -88,16 +88,15 @@ final class TaskDetailViewController: UIViewController {
 
     private func updateStartButton() {
         guard let task = task else { return }
-        startReadingButton.isEnabled = !task.expectedTexts.isEmpty
-        startReadingButton.alpha = task.expectedTexts.isEmpty ? 0.5 : 1.0
-        if task.isCompleted {
-            startReadingButton.setTitle("已完成 ✓", for: .normal)
-            startReadingButton.backgroundColor = .successGreen
-            startReadingButton.isEnabled = false
-        } else {
+        let hasTexts = !task.expectedTexts.isEmpty
+        startReadingButton.isEnabled = hasTexts
+        startReadingButton.alpha = hasTexts ? 1.0 : 0.5
+        if hasTexts {
             startReadingButton.setTitle("开始阅读", for: .normal)
             startReadingButton.backgroundColor = .primary
-            startReadingButton.isEnabled = true
+        } else {
+            startReadingButton.setTitle("暂无文本", for: .normal)
+            startReadingButton.backgroundColor = .textSecondary
         }
     }
 

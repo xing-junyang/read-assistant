@@ -91,12 +91,6 @@ final class TaskManager {
         guard let task = tasks.first(where: { $0.id == taskId }) else { return }
         task.sessions.append(session)
         task.modifiedAt = Date()
-
-        // Check if all expected texts have been read
-        let readIndices = Set(task.sessions.map { $0.expectedTextIndex })
-        if readIndices.count >= task.expectedTexts.count {
-            task.isCompleted = true
-        }
         saveTasks()
     }
 

@@ -55,6 +55,12 @@ final class ReadingViewController: UIViewController {
         setupUI()
         setupSpeechService()
         updateContentForCurrentIndex()
+        setupNavigationBar()
+    }
+
+    private func setupNavigationBar() {
+        let editButton = UIBarButtonItem(barButtonSystemItem: .edit, target: self, action: #selector(editExpectedTextTapped))
+        navigationItem.rightBarButtonItem = editButton
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -350,7 +356,7 @@ final class ReadingViewController: UIViewController {
         currentSession = nil
 
         if currentTextIndex >= task.expectedTexts.count {
-            // All done - show aggregate score
+            // All done - show aggregate score with option to re-read
             showAggregateResults()
         } else {
             updateContentForCurrentIndex()
@@ -396,9 +402,44 @@ final class ReadingViewController: UIViewController {
             ? "暂无评分数据"
             : "总体得分：\(Int(overallScore))%\n共完成 \(results.count) 段文本的阅读"
 
-        showAlert(title: "阅读完成", message: message) { [weak self] in
+        let alert = UIAlertController(title: "阅读完成", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "重新阅读", style: .default) { [weak self] _ in
+            guard let self = self else { return }
+            self.currentTextIndex = 0
+            self.currentSession = nil
+            self.updateContentForCurrentIndex()
+            // Reset buttons
+            self.recordButton.setTitle("🎤 开始录音", for: .normal)
+            self.recordButton.backgroundColor = .errorRed
+            self.pauseButton.isEnabled = false
+            self.pauseButton.alpha = 0.5
+            self.pauseButton.setTitle("⏸ 暂停", for: .normal)
+            self.nextButton.isEnabled = false
+            self.nextButton.alpha = 0.5
+            self.timerLabel.text = "00:00"
+            self.elapsedSeconds = 0
+            self.statusLabel.text = "准备就绪"
+            self.statusLabel.textColor = .textSecondary
+            self.scrollView.setContentOffset(.zero, animated: true)
+        })
+        alert.addAction(UIAlertAction(title: "返回", style: .cancel) { [weak self] _ in
             self?.navigationController?.popViewController(animated: true)
+        })
+        present(alert, animated: true)
+    }
+
+    @objc private func editExpectedTextTapped() {
+        guard let task = task, currentTextIndex < task.expectedTexts.count else { return }
+
+        let inputVC = TextInputViewController(initialText: task.expectedTexts[currentTextIndex])
+        inputVC.onSave = { [weak self] newText in
+            guard let self = self, let task = self.task else { return }
+            task.expectedTexts[self.currentTextIndex] = newText
+            TaskManager.shared.updateTask(task)
+            self.expectedTextLabel.text = newText
         }
+        let nav = UINavigationController(rootViewController: inputVC)
+        present(nav, animated: true)
     }
 }
 
