@@ -78,6 +78,7 @@ class DiffSegment: NSObject, NSCoding {
         case missing = 1   // Expected text is missing from actual.
         case extra = 2     // Extra text in actual not in expected.
         case wrong = 3     // Text differs from expected.
+        case homophone = 4 // Homophonic substitution (same pinyin, wrong character).
     }
 
     let type: DiffType

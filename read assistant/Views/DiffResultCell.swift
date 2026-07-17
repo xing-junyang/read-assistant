@@ -125,6 +125,16 @@ final class DiffResultCell: UITableViewCell {
             actualLabel.textColor = .errorRed
             arrowLabel.text = "→"
             arrowLabel.textColor = .errorRed
+        case .homophone:
+            typeIndicator.backgroundColor = .warningOrange
+            typeLabel.text = "同音"
+            typeLabel.textColor = .warningOrange
+            expectedLabel.text = segment.expectedSegment
+            expectedLabel.textColor = .textPrimary
+            actualLabel.text = segment.actualSegment
+            actualLabel.textColor = .warningOrange
+            arrowLabel.text = "→"
+            arrowLabel.textColor = .warningOrange
         }
     }
 

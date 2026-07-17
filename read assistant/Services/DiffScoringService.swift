@@ -12,8 +12,16 @@ final class DiffScoringService: ScoringServiceProtocol {
         let normalizedActual = normalizeText(actual)
 
         // Semantic word-level tokenization (Chinese-aware)
-        let expectedTokens = tokenize(normalizedExpected)
-        let actualTokens = tokenize(normalizedActual)
+        let rawExpected = tokenize(normalizedExpected)
+        let rawActual = tokenize(normalizedActual)
+
+        // Align token granularity: when CFStringTokenizer splits the same
+        // compound word differently (e.g. "必备" vs "必"+"背"), split
+        // unmatched multi-char tokens so LCS can match character-by-character.
+        let (expectedTokens, actualTokens) = alignTokenGranularity(
+            expectedTokens: rawExpected,
+            actualTokens: rawActual
+        )
 
         let differences = computeDifferences(
             expectedTokens: expectedTokens,
@@ -100,6 +108,35 @@ final class DiffScoringService: ScoringServiceProtocol {
         return tokens
     }
 
+    // MARK: - Token Granularity Alignment
+    /// Splits multi-character tokens that have no exact match on the other side.
+    /// This fixes CFStringTokenizer inconsistencies: when "必备" appears as one
+    /// token in actual but as ["必","背"] in expected, splitting "必备" → ["必","备"]
+    /// lets LCS match character-by-character, and homophone detection then handles "背"↔"备".
+    private func alignTokenGranularity(
+        expectedTokens: [String],
+        actualTokens: [String]
+    ) -> ([String], [String]) {
+        let expectedSet = Set(expectedTokens)
+        let actualSet = Set(actualTokens)
+
+        let alignedExpected = expectedTokens.flatMap { token -> [String] in
+            if token.count > 1 && !actualSet.contains(token) {
+                return token.map { String($0) }
+            }
+            return [token]
+        }
+
+        let alignedActual = actualTokens.flatMap { token -> [String] in
+            if token.count > 1 && !expectedSet.contains(token) {
+                return token.map { String($0) }
+            }
+            return [token]
+        }
+
+        return (alignedExpected, alignedActual)
+    }
+
     // MARK: - Word-Level Diff Algorithm
     /// Computes word-level differences using LCS at the token granularity.
     /// Merges consecutive same-type segments for cleaner output.
@@ -166,7 +203,7 @@ final class DiffScoringService: ScoringServiceProtocol {
             }
         }
 
-        return mergeConsecutiveSegments(rawSegments)
+        return mergeConsecutiveSegments(rawSegments).map(classifySubstitution(seg:))
     }
 
     /// Merges consecutive diff segments of the same type into grouped segments.
@@ -246,18 +283,62 @@ final class DiffScoringService: ScoringServiceProtocol {
         return result.reversed()
     }
 
+    // MARK: - Homophone Detection
+    /// Converts text to pinyin for homophone comparison.
+    /// Uses CFStringTransform (built into iOS, no external deps).
+    private func pinyin(of text: String) -> String {
+        let mutable = NSMutableString(string: text)
+        CFStringTransform(mutable, nil, kCFStringTransformToLatin, false)
+        return (mutable as String).lowercased().replacingOccurrences(of: " ", with: "")
+    }
+
+    /// Returns true when expected and actual are different characters
+    /// but share the same pinyin (homophone / 同音字).
+    private func isHomophone(expected: String, actual: String) -> Bool {
+        guard expected != actual else { return false }
+        let ep = pinyin(of: expected)
+        let ap = pinyin(of: actual)
+        return !ep.isEmpty && ep == ap
+    }
+
+    /// Checks a `.wrong` segment and downgrades it to `.homophone` if applicable.
+    private func classifySubstitution(seg: DiffSegment) -> DiffSegment {
+        guard seg.type == .wrong,
+              let exp = seg.expectedSegment,
+              let act = seg.actualSegment,
+              isHomophone(expected: exp, actual: act) else {
+            return seg
+        }
+        return DiffSegment(
+            type: .homophone,
+            expectedSegment: exp,
+            actualSegment: act,
+            expectedRange: seg.expectedRange,
+            actualRange: seg.actualRange
+        )
+    }
+
     // MARK: - Score Calculation
-    /// Accuracy score = (correct_tokens / max(expected_count, actual_count)) * 100
+    /// Weighted accuracy score:
+    ///   correct = 1.0, homophone = 0.5, missing/extra/wrong = 0.0
     private func calculateScore(
         differences: [DiffSegment],
         expectedCount: Int,
         actualCount: Int
     ) -> Double {
-        let correctCount = differences
-            .filter { $0.type == .correct }
-            .reduce(0) { $0 + $1.expectedRange.length }
+        var weightedCorrect = 0.0
+        for seg in differences {
+            switch seg.type {
+            case .correct:
+                weightedCorrect += Double(seg.expectedRange.length)
+            case .homophone:
+                weightedCorrect += Double(seg.expectedRange.length) * 0.8
+            case .missing, .extra, .wrong:
+                break
+            }
+        }
         let denominator = max(expectedCount, actualCount, 1)
-        let rawScore = Double(correctCount) / Double(denominator) * 100.0
+        let rawScore = weightedCorrect / Double(denominator) * 100.0
         return min(max(rawScore, 0.0), 100.0)
     }
 }
