@@ -1,0 +1,16 @@
+PODS:
+  - TesseractOCRiOS (3.4.0)
+
+DEPENDENCIES:
+  - TesseractOCRiOS (from `./tesseract/TesseractOCR-iOS-local`)
+
+EXTERNAL SOURCES:
+  TesseractOCRiOS:
+    :path: "./tesseract/TesseractOCR-iOS-local"
+
+SPEC CHECKSUMS:
+  TesseractOCRiOS: 5be498d8fef7a37a38046a05670f9f34b9f042d2
+
+PODFILE CHECKSUM: a89df97b5c08f835bb963d9fc7ad1770511127df
+
+COCOAPODS: 1.16.2
