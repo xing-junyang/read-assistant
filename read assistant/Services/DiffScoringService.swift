@@ -71,7 +71,7 @@ final class DiffScoringService: ScoringServiceProtocol {
     private func tokenize(_ text: String) -> [String] {
         let nsText = text as NSString
         let range = CFRange(location: 0, length: nsText.length)
-        let locale = CFLocaleCreate(kCFAllocatorDefault, "zh_CN" as CFString)
+        let locale = NSLocale(localeIdentifier: "zh_CN")
         guard let tokenizer = CFStringTokenizerCreate(
             kCFAllocatorDefault,
             text as CFString,
