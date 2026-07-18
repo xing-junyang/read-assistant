@@ -34,7 +34,7 @@
     "vendored_libraries": "TesseractOCR/lib/*.a"
   },
   "xcconfig": {
-    "OTHER_LDFLAGS": "-lc++",
+    "OTHER_LDFLAGS": "-lc++ -lz",
     "CLANG_CXX_LIBRARY": "libc++"
   }
 }
