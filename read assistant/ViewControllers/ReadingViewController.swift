@@ -20,6 +20,9 @@ final class ReadingViewController: UIViewController {
     private var currentTextIndex = 0
     private var isRecording = false
     private var currentSession: ReadingSession?
+    
+    /// Prevents duplicate taps during long operations (stopRecording, scoring, next, finish).
+    private var isProcessing = false
 
     // Timer for duration display
     private var timer: Timer?
@@ -74,6 +77,10 @@ final class ReadingViewController: UIViewController {
     private let pauseButton = UIButton(type: .system)
     private let nextButton = UIButton(type: .system)
     private let finishButton = UIButton(type: .system)
+    
+    // Processing spinner overlay
+    private let spinnerOverlay = UIView()
+    private let spinner = UIActivityIndicatorView(style: .whiteLarge)
 
     // MARK: - Initialization
     init(taskId: String) {
@@ -232,6 +239,26 @@ final class ReadingViewController: UIViewController {
 
         contentStack.addArrangedSubview(buttonStack)
 
+        // Processing spinner overlay (hidden by default)
+        spinnerOverlay.backgroundColor = UIColor.black.withAlphaComponent(0.3)
+        spinnerOverlay.isHidden = true
+        spinnerOverlay.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(spinnerOverlay)
+        
+        spinner.hidesWhenStopped = true
+        spinner.color = .white
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinnerOverlay.addSubview(spinner)
+        
+        NSLayoutConstraint.activate([
+            spinnerOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            spinnerOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            spinnerOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            spinnerOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            spinner.centerXAnchor.constraint(equalTo: spinnerOverlay.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: spinnerOverlay.centerYAnchor)
+        ])
+
         // Layout
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: compatSafeAreaTop),
@@ -310,11 +337,61 @@ final class ReadingViewController: UIViewController {
         timer = nil
     }
 
+    // MARK: - Processing State
+    
+    /// Shows or hides the spinner overlay and disables/enables all action buttons.
+    /// Call this before and after any long-running operation to prevent double-taps.
+    private func setProcessing(_ processing: Bool) {
+        isProcessing = processing
+        
+        if processing {
+            spinnerOverlay.isHidden = false
+            spinner.startAnimating()
+        } else {
+            spinnerOverlay.isHidden = true
+            spinner.stopAnimating()
+        }
+        
+        // Disable/enable all interactive controls
+        let buttons: [UIControl] = [recordButton, pauseButton, nextButton, finishButton]
+        buttons.forEach { $0.isEnabled = !processing }
+        
+        // When processing ends, restore correct enabled states
+        if !processing {
+            refreshButtonStates()
+        }
+    }
+    
+    /// Restores button enabled/disabled states based on current recording state.
+    private func refreshButtonStates() {
+        if isRecording {
+            recordButton.isEnabled = true
+            recordButton.backgroundColor = .textSecondary
+            pauseButton.isEnabled = true
+            pauseButton.alpha = 1.0
+        } else {
+            recordButton.isEnabled = true
+            recordButton.backgroundColor = .errorRed
+            pauseButton.isEnabled = false
+            pauseButton.alpha = 0.5
+        }
+        
+        let hasText = !recognizedTextLabel.text!.isEmpty && recognizedTextLabel.text != "等待录音..."
+        nextButton.isEnabled = hasText
+        nextButton.alpha = hasText ? 1.0 : 0.5
+        
+        finishButton.isEnabled = true
+        finishButton.alpha = 1.0
+    }
+
     // MARK: - Actions
 
     @objc private func recordButtonTapped() {
+        guard !isProcessing else { return }
         if isRecording {
+            setProcessing(true)
             stopRecording()
+            setProcessing(false)
         } else {
             startRecording()
         }
@@ -409,6 +486,7 @@ final class ReadingViewController: UIViewController {
     }
 
     @objc private func pauseButtonTapped() {
+        guard !isProcessing else { return }
         if speechService.isRecognizing {
             speechService.pauseRecognition()
             pauseButton.setTitle("▶ 继续", for: .normal)
@@ -436,7 +514,10 @@ final class ReadingViewController: UIViewController {
     }
 
     @objc private func nextButtonTapped() {
+        guard !isProcessing else { return }
         guard let task = task else { return }
+        
+        setProcessing(true)
         
         // Cancel any pending auto-advance
         cancelAutoNext()
@@ -482,19 +563,24 @@ final class ReadingViewController: UIViewController {
 
         if currentTextIndex >= task.expectedTexts.count {
             // All done - show aggregate score with option to re-read
+            setProcessing(false)
             showAggregateResults()
         } else {
             updateContentForCurrentIndex()
             // Scroll to top
             scrollView.setContentOffset(.zero, animated: true)
+            setProcessing(false)
         }
     }
 
     @objc private func finishButtonTapped() {
+        guard !isProcessing else { return }
         guard let task = task else { return }
 
         showConfirm(title: "完成全部", message: "确定要结束所有阅读吗？") { [weak self] in
             guard let self = self else { return }
+            
+            self.setProcessing(true)
 
             // Stop recording if active
             if self.isRecording {
@@ -512,6 +598,7 @@ final class ReadingViewController: UIViewController {
                 TaskManager.shared.addSession(session, toTaskId: task.id)
             }
 
+            self.setProcessing(false)
             self.showAggregateResults()
         }
     }
@@ -530,6 +617,7 @@ final class ReadingViewController: UIViewController {
         let alert = UIAlertController(title: "阅读完成", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "重新阅读", style: .default) { [weak self] _ in
             guard let self = self else { return }
+            self.setProcessing(true)
             // Clean up any dangling recording before resetting
             if self.isRecording {
                 self.speechService.stopRecognition()
@@ -552,6 +640,7 @@ final class ReadingViewController: UIViewController {
             self.statusLabel.text = "准备就绪"
             self.statusLabel.textColor = .textSecondary
             self.scrollView.setContentOffset(.zero, animated: true)
+            self.setProcessing(false)
         })
         alert.addAction(UIAlertAction(title: "返回", style: .cancel) { [weak self] _ in
             self?.navigationController?.popViewController(animated: true)
@@ -788,6 +877,8 @@ extension ReadingViewController: SpeechRecognitionServiceDelegate {
         guard let task = task, currentTextIndex < task.expectedTexts.count else { return }
         guard isAutoNextEnabled else { return }
         
+        setProcessing(true)
+        
         // Stop recording if still active
         if isRecording {
             speechService.stopRecognition()
@@ -818,10 +909,12 @@ extension ReadingViewController: SpeechRecognitionServiceDelegate {
         if currentTextIndex >= task.expectedTexts.count {
             // All done
             updateContentForCurrentIndex()
+            setProcessing(false)
             showAggregateResults()
         } else {
             updateContentForCurrentIndex()
             scrollView.setContentOffset(.zero, animated: true)
+            setProcessing(false)
             
             // Auto-start recording for the next paragraph
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
