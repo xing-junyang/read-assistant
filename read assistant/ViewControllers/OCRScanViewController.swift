@@ -25,6 +25,9 @@ final class OCRScanViewController: UIViewController {
     private var isMarkingCorners = false
     private let maxCorners = 4
 
+    /// Shape layer that draws lines connecting the marked corners
+    private let quadShapeLayer = CAShapeLayer()
+
     // Image view for captured photo
     private let imageView = UIImageView()
     private let overlayView = UIView()
@@ -76,6 +79,13 @@ final class OCRScanViewController: UIViewController {
         overlayView.isUserInteractionEnabled = true
         overlayView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(overlayView)
+
+        // Shape layer for drawing the quad outline
+        quadShapeLayer.fillColor = UIColor.accent.withAlphaComponent(0.1).cgColor
+        quadShapeLayer.strokeColor = UIColor.accent.cgColor
+        quadShapeLayer.lineWidth = 2.5
+        quadShapeLayer.lineDashPattern = [6, 3]
+        overlayView.layer.addSublayer(quadShapeLayer)
 
         // Tap gesture for marking corners
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
@@ -269,6 +279,7 @@ final class OCRScanViewController: UIViewController {
         capturedImage = nil
         corners.removeAll()
         clearCornerMarkers()
+        quadShapeLayer.path = nil
 
         imageView.image = nil
         imageView.isHidden = true
@@ -295,14 +306,34 @@ final class OCRScanViewController: UIViewController {
         let point = gesture.location(in: overlayView)
         corners.append(point)
         addCornerMarker(at: point, index: corners.count - 1)
+        updateQuadPath()
 
         if corners.count == maxCorners {
-            instructionLabel.text = "四个角标记完成，点击「开始识别」"
+            instructionLabel.text = "四个角标记完成，点击「开始识别」或继续调整"
             recognizeButton.isEnabled = true
         } else {
             let labels = ["左上角", "右上角", "右下角", "左下角"]
             instructionLabel.text = "已标记 \(labels[corners.count - 1])，请点击下一个角"
         }
+    }
+
+    private func updateQuadPath() {
+        guard corners.count >= 2 else {
+            quadShapeLayer.path = nil
+            return
+        }
+
+        let path = UIBezierPath()
+        path.move(to: corners[0])
+        for i in 1..<corners.count {
+            path.addLine(to: corners[i])
+        }
+        // If we have all 4 corners, close the path
+        if corners.count == 4 {
+            path.addLine(to: corners[0])
+            path.close()
+        }
+        quadShapeLayer.path = path.cgPath
     }
 
     private func addCornerMarker(at point: CGPoint, index: Int) {
@@ -332,6 +363,7 @@ final class OCRScanViewController: UIViewController {
     @objc private func clearCornersTapped() {
         corners.removeAll()
         clearCornerMarkers()
+        quadShapeLayer.path = nil
         instructionLabel.text = "请点击文档的四个角（左上、右上、右下、左下）进行标记"
         recognizeButton.isEnabled = false
     }
@@ -343,19 +375,28 @@ final class OCRScanViewController: UIViewController {
             return
         }
 
+        // Push to preview controller for draggable corner adjustment & confirmation.
+        // corners are in overlayView coordinate space — the preview controller uses
+        // the same scaleAspectFit layout, so coordinates are compatible.
+        let previewVC = ImageCropPreviewViewController(image: image, corners: corners)
+        previewVC.onCancel = { [weak self] in
+            self?.navigationController?.popViewController(animated: true)
+            self?.recognizeButton.isEnabled = true
+            self?.instructionLabel.text = "四个角标记完成，点击「开始识别」"
+        }
+        previewVC.onConfirm = { [weak self] correctedImage in
+            self?.navigationController?.popViewController(animated: true)
+            self?.performOCR(on: correctedImage)
+        }
+        recognizeButton.isEnabled = false
+        navigationController?.pushViewController(previewVC, animated: true)
+    }
+
+    private func performOCR(on image: UIImage) {
         activityIndicator.startAnimating()
         instructionLabel.text = "正在识别..."
-        recognizeButton.isEnabled = false
 
-        // Step 1: Perform perspective correction
-        guard let correctedImage = performPerspectiveCorrection(on: image, corners: corners) else {
-            activityIndicator.stopAnimating()
-            showAlert(title: "处理失败", message: "透视校正失败，请重新标记四角")
-            return
-        }
-
-        // Step 2: OCR
-        ocrService.recognizeText(from: correctedImage) { [weak self] result in
+        ocrService.recognizeText(from: image) { [weak self] result in
             self?.activityIndicator.stopAnimating()
 
             switch result {
