@@ -10,6 +10,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
 
+        // Register UserDefaults defaults
+        UserDefaults.standard.register(defaults: [
+            "auto_split_by_newline_enabled": true
+        ])
+
         // Initialize window (no UISceneDelegate on iOS 10)
         window = UIWindow(frame: UIScreen.main.bounds)
         window?.backgroundColor = .background

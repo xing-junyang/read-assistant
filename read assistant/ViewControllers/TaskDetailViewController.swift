@@ -166,13 +166,7 @@ final class TaskDetailViewController: UIViewController {
         let inputVC = TextInputViewController()
         inputVC.onSave = { [weak self] text in
             guard let self = self, let task = self.task else { return }
-            // Auto-parse newlines into separate expected text paragraphs
-            let paragraphs = text.components(separatedBy: "\n")
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            for paragraph in paragraphs {
-                task.expectedTexts.append(paragraph)
-            }
+            self.appendExpectedText(text, to: task)
             TaskManager.shared.updateTask(task)
             self.tableView.reloadData()
             self.updateStartButton()
@@ -189,19 +183,31 @@ final class TaskDetailViewController: UIViewController {
 
         ocrVC.onTextRecognized = { [weak self] text in
             guard let self = self, let task = self.task else { return }
-            // Auto-parse newlines into separate expected text paragraphs
-            let paragraphs = text.components(separatedBy: "\n")
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            for paragraph in paragraphs {
-                task.expectedTexts.append(paragraph)
-            }
+            self.appendExpectedText(text, to: task)
             TaskManager.shared.updateTask(task)
             self.tableView.reloadData()
             self.updateStartButton()
         }
         let nav = UINavigationController(rootViewController: ocrVC)
         present(nav, animated: true)
+    }
+
+    /// Appends expected text to the task, respecting the auto-split-by-newline setting.
+    private func appendExpectedText(_ text: String, to task: ReadingTask) {
+        let autoSplit = UserDefaults.standard.object(forKey: "auto_split_by_newline_enabled") as? Bool ?? true
+        if autoSplit {
+            let paragraphs = text.components(separatedBy: "\n")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            for paragraph in paragraphs {
+                task.expectedTexts.append(paragraph)
+            }
+        } else {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                task.expectedTexts.append(trimmed)
+            }
+        }
     }
 
     @objc private func startReadingTapped() {

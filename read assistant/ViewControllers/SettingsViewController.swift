@@ -130,6 +130,17 @@ final class SettingsViewController: UIViewController {
             readingItems,
             // General
             [
+                Item(
+                    title: "导入时自动分段",
+                    icon: "📄",
+                    accessoryType: .none,
+                    action: {},
+                    isToggle: true,
+                    toggleValue: UserDefaults.standard.bool(forKey: "auto_split_by_newline_enabled"),
+                    toggleChanged: { newValue in
+                        UserDefaults.standard.set(newValue, forKey: "auto_split_by_newline_enabled")
+                    }
+                ),
                 Item(title: "关于", icon: "ℹ️", accessoryType: .disclosureIndicator) { [weak self] in
                     self?.navigateToAbout()
                 }
