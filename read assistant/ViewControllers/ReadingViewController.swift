@@ -610,9 +610,35 @@ final class ReadingViewController: UIViewController {
         let results = task.sessions.compactMap { $0.result }
         let overallScore = scoringService.aggregateScore(from: results)
 
+        // --- Award XP and Coins ---
+        let rewardManager = RewardManager.shared
+        let xpResult = rewardManager.awardXP(forScore: overallScore)
+        let coinsGained = rewardManager.awardCoins(forScore: overallScore)
+        let checkInResult = rewardManager.recordCheckIn()
+
+        // Build reward messages
+        var rewardMessages: [String] = []
+        rewardMessages.append("⚡ 经验 +\(xpResult.xpGained)")
+        if xpResult.leveledUp {
+            let title = LevelTitle.title(for: xpResult.newLevel)
+            rewardMessages.append("🎉 升级了！\(title.icon) \(title.title)")
+        }
+        if coinsGained > 0 {
+            rewardMessages.append("💰 金币 +\(coinsGained)")
+        }
+        switch checkInResult {
+        case .day3(let name):
+            rewardMessages.append("📅 签到3天奖励：\(name)")
+        case .day7(let name):
+            rewardMessages.append("📅 签到7天奖励：\(name)")
+        case .none:
+            break
+        }
+        let rewardText = rewardMessages.isEmpty ? "" : "\n\n" + rewardMessages.joined(separator: "\n")
+
         let message = results.isEmpty
-            ? "暂无评分数据"
-            : "总体得分：\(Int(overallScore))%\n共完成 \(results.count) 段文本的阅读"
+            ? "暂无评分数据" + rewardText
+            : "总体得分：\(Int(overallScore))%\n共完成 \(results.count) 段文本的阅读" + rewardText
 
         let alert = UIAlertController(title: "阅读完成", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "重新阅读", style: .default) { [weak self] _ in

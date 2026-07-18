@@ -34,7 +34,22 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             tag: 0
         )
 
-        // --- Tab 2: Settings ---
+        // --- Tab 2: Rewards ---
+        let rewardsVC = RewardsViewController()
+        let rewardsNav = UINavigationController(rootViewController: rewardsVC)
+        rewardsNav.navigationBar.barTintColor = .cardBackground
+        rewardsNav.navigationBar.tintColor = .primary
+        rewardsNav.navigationBar.titleTextAttributes = [
+            NSAttributedString.Key.foregroundColor: UIColor.textPrimary
+        ]
+        rewardsNav.navigationBar.isTranslucent = false
+        rewardsNav.tabBarItem = UITabBarItem(
+            title: "奖励",
+            image: Self.emojiIcon("🎁"),
+            tag: 1
+        )
+
+        // --- Tab 3: Settings ---
         let settingsVC = SettingsViewController()
         let settingsNav = UINavigationController(rootViewController: settingsVC)
         settingsNav.navigationBar.barTintColor = .cardBackground
@@ -46,12 +61,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         settingsNav.tabBarItem = UITabBarItem(
             title: "设置",
             image: Self.emojiIcon("⚙️"),
-            tag: 1
+            tag: 2
         )
 
         // --- Tab Bar Controller ---
         let tabBarController = UITabBarController()
-        tabBarController.viewControllers = [homeNav, settingsNav]
+        tabBarController.viewControllers = [homeNav, rewardsNav, settingsNav]
         tabBarController.tabBar.barTintColor = .cardBackground
         tabBarController.tabBar.tintColor = .primary
         tabBarController.tabBar.isTranslucent = false
