@@ -279,7 +279,10 @@ final class ReadingViewController: UIViewController {
                     // Create a new session
                     self.currentSession = ReadingSession(expectedTextIndex: self.currentTextIndex)
 
-                    try self.speechService.startRecognition(locale: Locale(identifier: "zh-CN"))
+                    // Provide expected text as context to improve recognition accuracy
+                    let expectedText = self.task?.expectedTexts[self.currentTextIndex] ?? ""
+                    let contextualStrings = Self.extractContextualStrings(from: expectedText)
+                    try self.speechService.startRecognition(locale: Locale(identifier: "zh-CN"), contextualStrings: contextualStrings)
                     self.isRecording = true
                     self.startTimer()
 
@@ -440,6 +443,61 @@ final class ReadingViewController: UIViewController {
         }
         let nav = UINavigationController(rootViewController: inputVC)
         present(nav, animated: true)
+    }
+
+    // MARK: - Context Extraction Helper
+
+    /// Extracts contextual strings from expected text to bias speech recognition.
+    ///
+    /// Uses word-level granularity so the recognizer gets vocabulary hints without
+    /// being able to match the full sentence trivially — this preserves the testing
+    /// and assessment value of the reading exercise.
+    ///
+    /// Chinese text is segmented into words using `CFStringTokenizer` (natural
+    /// language-aware word boundaries). English text is split by whitespace.
+    ///
+    /// - Parameter text: The expected reading text.
+    /// - Returns: An array of unique individual words to pass as contextual hints.
+    private static func extractContextualStrings(from text: String) -> [String] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let words = tokenizeWords(from: trimmed)
+        // Deduplicate while preserving order, filter out single characters
+        var seen = Set<String>()
+        var result: [String] = []
+        for word in words where word.count >= 2 && !seen.contains(word) {
+            seen.insert(word)
+            result.append(word)
+        }
+        return result
+    }
+
+    /// Tokenizes a string into words using CFStringTokenizer for natural
+    /// language-aware word segmentation (supports Chinese, Japanese, etc.).
+    private static func tokenizeWords(from text: String) -> [String] {
+        let range = CFRange(location: 0, length: text.utf16.count)
+        let tokenizer = CFStringTokenizerCreate(
+            kCFAllocatorDefault,
+            text as CFString,
+            range,
+            kCFStringTokenizerUnitWord,
+            CFLocaleCopyCurrent()
+        )
+
+        var words: [String] = []
+        var tokenType = CFStringTokenizerGoToTokenAtIndex(tokenizer, 0)
+        while tokenType != [] {
+            let tokenRange = CFStringTokenizerGetCurrentTokenRange(tokenizer)
+            if tokenRange.location != kCFNotFound, tokenRange.length > 0 {
+                let start = text.utf16.index(text.utf16.startIndex, offsetBy: tokenRange.location)
+                let end = text.utf16.index(start, offsetBy: tokenRange.length)
+                let word = String(text[start..<end])
+                words.append(word)
+            }
+            tokenType = CFStringTokenizerAdvanceToNextToken(tokenizer)
+        }
+        return words
     }
 }
 

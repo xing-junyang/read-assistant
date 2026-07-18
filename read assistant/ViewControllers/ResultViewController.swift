@@ -85,13 +85,33 @@ final class ResultViewController: UIViewController {
         expectedHeader.text = "期望文本："
         expectedHeader.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
         expectedHeader.textColor = .textSecondary
-        contentStack.addArrangedSubview(expectedHeader)
+        expectedHeader.translatesAutoresizingMaskIntoConstraints = false
+        let expectedHeaderContainer = UIView()
+        expectedHeaderContainer.addSubview(expectedHeader)
+        NSLayoutConstraint.activate([
+            expectedHeader.topAnchor.constraint(equalTo: expectedHeaderContainer.topAnchor, constant: 8),
+            expectedHeader.bottomAnchor.constraint(equalTo: expectedHeaderContainer.bottomAnchor, constant: -4),
+            expectedHeader.leadingAnchor.constraint(equalTo: expectedHeaderContainer.leadingAnchor, constant: 16),
+            expectedHeader.trailingAnchor.constraint(equalTo: expectedHeaderContainer.trailingAnchor, constant: -16)
+        ])
+        contentStack.addArrangedSubview(expectedHeaderContainer)
 
+        let expectedTextContainer = UIView()
+        expectedTextContainer.backgroundColor = .cardBackground
+        expectedTextContainer.layer.cornerRadius = 8
         expectedFullTextLabel.text = result.expectedText
         expectedFullTextLabel.font = UIFont.systemFont(ofSize: 14)
         expectedFullTextLabel.textColor = .textPrimary
         expectedFullTextLabel.numberOfLines = 0
-        contentStack.addArrangedSubview(expectedFullTextLabel)
+        expectedFullTextLabel.translatesAutoresizingMaskIntoConstraints = false
+        expectedTextContainer.addSubview(expectedFullTextLabel)
+        NSLayoutConstraint.activate([
+            expectedFullTextLabel.topAnchor.constraint(equalTo: expectedTextContainer.topAnchor, constant: 12),
+            expectedFullTextLabel.bottomAnchor.constraint(equalTo: expectedTextContainer.bottomAnchor, constant: -12),
+            expectedFullTextLabel.leadingAnchor.constraint(equalTo: expectedTextContainer.leadingAnchor, constant: 16),
+            expectedFullTextLabel.trailingAnchor.constraint(equalTo: expectedTextContainer.trailingAnchor, constant: -16)
+        ])
+        contentStack.addArrangedSubview(expectedTextContainer)
 
         // Spacer
         let spacer = UIView()
@@ -103,13 +123,33 @@ final class ResultViewController: UIViewController {
         actualHeader.text = "识别文本："
         actualHeader.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
         actualHeader.textColor = .textSecondary
-        contentStack.addArrangedSubview(actualHeader)
+        actualHeader.translatesAutoresizingMaskIntoConstraints = false
+        let actualHeaderContainer = UIView()
+        actualHeaderContainer.addSubview(actualHeader)
+        NSLayoutConstraint.activate([
+            actualHeader.topAnchor.constraint(equalTo: actualHeaderContainer.topAnchor, constant: 8),
+            actualHeader.bottomAnchor.constraint(equalTo: actualHeaderContainer.bottomAnchor, constant: -4),
+            actualHeader.leadingAnchor.constraint(equalTo: actualHeaderContainer.leadingAnchor, constant: 16),
+            actualHeader.trailingAnchor.constraint(equalTo: actualHeaderContainer.trailingAnchor, constant: -16)
+        ])
+        contentStack.addArrangedSubview(actualHeaderContainer)
 
+        let actualTextContainer = UIView()
+        actualTextContainer.backgroundColor = .cardBackground
+        actualTextContainer.layer.cornerRadius = 8
         actualFullTextLabel.text = result.actualText
         actualFullTextLabel.font = UIFont.systemFont(ofSize: 14)
         actualFullTextLabel.textColor = .primary
         actualFullTextLabel.numberOfLines = 0
-        contentStack.addArrangedSubview(actualFullTextLabel)
+        actualFullTextLabel.translatesAutoresizingMaskIntoConstraints = false
+        actualTextContainer.addSubview(actualFullTextLabel)
+        NSLayoutConstraint.activate([
+            actualFullTextLabel.topAnchor.constraint(equalTo: actualTextContainer.topAnchor, constant: 12),
+            actualFullTextLabel.bottomAnchor.constraint(equalTo: actualTextContainer.bottomAnchor, constant: -12),
+            actualFullTextLabel.leadingAnchor.constraint(equalTo: actualTextContainer.leadingAnchor, constant: 16),
+            actualFullTextLabel.trailingAnchor.constraint(equalTo: actualTextContainer.trailingAnchor, constant: -16)
+        ])
+        contentStack.addArrangedSubview(actualTextContainer)
 
         // Layout
         NSLayoutConstraint.activate([

@@ -35,7 +35,7 @@ final class AppleSpeechRecognitionService: NSObject, SpeechRecognitionServicePro
 
     // MARK: - SpeechRecognitionServiceProtocol
 
-    func startRecognition(locale: Locale) throws {
+    func startRecognition(locale: Locale, contextualStrings: [String] = []) throws {
         guard !isRecognizing else {
             throw SpeechRecognitionError.recognitionInProgress
         }
@@ -60,6 +60,13 @@ final class AppleSpeechRecognitionService: NSObject, SpeechRecognitionServicePro
 
         guard let recognitionRequest = recognitionRequest else {
             throw SpeechRecognitionError.audioEngineError("无法创建识别请求")
+        }
+
+        // Provide expected words/phrases as context to improve recognition accuracy.
+        // contextualStrings biases the recognizer toward these words without
+        // restricting it exclusively to them.
+        if !contextualStrings.isEmpty {
+            recognitionRequest.contextualStrings = contextualStrings
         }
 
         // Configure for partial results

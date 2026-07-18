@@ -12,9 +12,12 @@ protocol SpeechRecognitionServiceProtocol: AnyObject {
     var delegate: SpeechRecognitionServiceDelegate? { get set }
 
     /// Starts speech recognition from the device microphone.
-    /// - Parameter locale: The locale for recognition (e.g., "zh-CN").
+    /// - Parameters:
+    ///   - locale: The locale for recognition (e.g., "zh-CN").
+    ///   - contextualStrings: Optional array of words/phrases the recognizer should favor.
+    ///     Providing expected text as context can significantly improve accuracy.
     /// - Throws: Error if microphone access is denied or recognizer is unavailable.
-    func startRecognition(locale: Locale) throws
+    func startRecognition(locale: Locale, contextualStrings: [String]) throws
 
     /// Pauses ongoing recognition (keeps session alive).
     func pauseRecognition()

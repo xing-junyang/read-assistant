@@ -39,25 +39,28 @@ final class DiffResultCell: UITableViewCell {
         typeLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(typeLabel)
 
-        // Expected text
-        expectedLabel.font = UIFont.systemFont(ofSize: 14)
-        expectedLabel.numberOfLines = 0
-        expectedLabel.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(expectedLabel)
-
-        // Arrow
+        // Arrow — always centered between expected and actual
         arrowLabel.font = UIFont.systemFont(ofSize: 14)
         arrowLabel.textAlignment = .center
         arrowLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(arrowLabel)
 
-        // Actual text
+        // Expected text (left side, truncated to 20 chars)
+        expectedLabel.font = UIFont.systemFont(ofSize: 14)
+        expectedLabel.numberOfLines = 1
+        expectedLabel.lineBreakMode = .byTruncatingTail
+        expectedLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(expectedLabel)
+
+        // Actual text (right side, truncated to 20 chars)
         actualLabel.font = UIFont.systemFont(ofSize: 14)
-        actualLabel.numberOfLines = 0
+        actualLabel.numberOfLines = 1
+        actualLabel.lineBreakMode = .byTruncatingTail
         actualLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(actualLabel)
 
         NSLayoutConstraint.activate([
+            // Type indicator row (top)
             typeIndicator.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
             typeIndicator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
             typeIndicator.widthAnchor.constraint(equalToConstant: 12),
@@ -66,20 +69,32 @@ final class DiffResultCell: UITableViewCell {
             typeLabel.centerYAnchor.constraint(equalTo: typeIndicator.centerYAnchor),
             typeLabel.leadingAnchor.constraint(equalTo: typeIndicator.trailingAnchor, constant: 6),
 
-            expectedLabel.topAnchor.constraint(equalTo: typeIndicator.bottomAnchor, constant: 6),
+            // Arrow — centered horizontally, below the type row
+            arrowLabel.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            arrowLabel.topAnchor.constraint(equalTo: typeIndicator.bottomAnchor, constant: 8),
+            arrowLabel.widthAnchor.constraint(equalToConstant: 24),
+
+            // Expected text (left of arrow)
+            expectedLabel.centerYAnchor.constraint(equalTo: arrowLabel.centerYAnchor),
             expectedLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
             expectedLabel.trailingAnchor.constraint(equalTo: arrowLabel.leadingAnchor, constant: -4),
 
-            arrowLabel.centerYAnchor.constraint(equalTo: expectedLabel.centerYAnchor),
-            arrowLabel.widthAnchor.constraint(equalToConstant: 24),
-            arrowLabel.trailingAnchor.constraint(equalTo: actualLabel.leadingAnchor, constant: -4),
-
-            actualLabel.topAnchor.constraint(equalTo: expectedLabel.topAnchor),
+            // Actual text (right of arrow)
+            actualLabel.centerYAnchor.constraint(equalTo: arrowLabel.centerYAnchor),
+            actualLabel.leadingAnchor.constraint(equalTo: arrowLabel.trailingAnchor, constant: 4),
             actualLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
 
-            contentView.bottomAnchor.constraint(equalTo: expectedLabel.bottomAnchor, constant: 10),
-            contentView.bottomAnchor.constraint(greaterThanOrEqualTo: actualLabel.bottomAnchor, constant: 10)
+            // Bottom anchor
+            contentView.bottomAnchor.constraint(equalTo: arrowLabel.bottomAnchor, constant: 10)
         ])
+    }
+
+    // MARK: - Helpers
+
+    /// Truncates text to `maxLength` characters, appending "…" if needed.
+    private func truncate(_ text: String, maxLength: Int = 20) -> String {
+        if text.count <= maxLength { return text }
+        return String(text.prefix(maxLength)) + "…"
     }
 
     // MARK: - Configuration
@@ -89,9 +104,9 @@ final class DiffResultCell: UITableViewCell {
             typeIndicator.backgroundColor = .successGreen
             typeLabel.text = "正确"
             typeLabel.textColor = .successGreen
-            expectedLabel.text = segment.expectedSegment
+            expectedLabel.text = truncate(segment.expectedSegment ?? "")
             expectedLabel.textColor = .textPrimary
-            actualLabel.text = segment.actualSegment
+            actualLabel.text = truncate(segment.actualSegment ?? "")
             actualLabel.textColor = .textPrimary
             arrowLabel.text = "→"
             arrowLabel.textColor = .successGreen
@@ -99,7 +114,7 @@ final class DiffResultCell: UITableViewCell {
             typeIndicator.backgroundColor = .errorRed
             typeLabel.text = "遗漏"
             typeLabel.textColor = .errorRed
-            expectedLabel.text = segment.expectedSegment
+            expectedLabel.text = truncate(segment.expectedSegment ?? "")
             expectedLabel.textColor = .errorRed
             actualLabel.text = "—"
             actualLabel.textColor = .textTertiary
@@ -111,7 +126,7 @@ final class DiffResultCell: UITableViewCell {
             typeLabel.textColor = .warningOrange
             expectedLabel.text = "—"
             expectedLabel.textColor = .textTertiary
-            actualLabel.text = segment.actualSegment
+            actualLabel.text = truncate(segment.actualSegment ?? "")
             actualLabel.textColor = .warningOrange
             arrowLabel.text = "→"
             arrowLabel.textColor = .textTertiary
@@ -119,29 +134,35 @@ final class DiffResultCell: UITableViewCell {
             typeIndicator.backgroundColor = .errorRed
             typeLabel.text = "错误"
             typeLabel.textColor = .errorRed
-            expectedLabel.text = segment.expectedSegment
+            expectedLabel.text = truncate(segment.expectedSegment ?? "")
             expectedLabel.textColor = .textPrimary
-            actualLabel.text = segment.actualSegment
+            actualLabel.text = truncate(segment.actualSegment ?? "")
             actualLabel.textColor = .errorRed
             arrowLabel.text = "→"
             arrowLabel.textColor = .errorRed
             // Show pinyin for short errors to aid learning
             if let pinyin = segment.expectedPinyin {
-                expectedLabel.text = "\(segment.expectedSegment ?? "")\n[\(pinyin)]"
+                expectedLabel.text = "\(truncate(segment.expectedSegment ?? ""))\n[\(pinyin)]"
+                expectedLabel.numberOfLines = 2
+            } else {
+                expectedLabel.numberOfLines = 1
             }
         case .homophone:
             typeIndicator.backgroundColor = .warningOrange
             typeLabel.text = "同音"
             typeLabel.textColor = .warningOrange
-            expectedLabel.text = segment.expectedSegment
+            expectedLabel.text = truncate(segment.expectedSegment ?? "")
             expectedLabel.textColor = .textPrimary
-            actualLabel.text = segment.actualSegment
+            actualLabel.text = truncate(segment.actualSegment ?? "")
             actualLabel.textColor = .warningOrange
             arrowLabel.text = "→"
             arrowLabel.textColor = .warningOrange
             // Show pinyin for short homophone errors
             if let pinyin = segment.expectedPinyin {
-                expectedLabel.text = "\(segment.expectedSegment ?? "")\n[\(pinyin)]"
+                expectedLabel.text = "\(truncate(segment.expectedSegment ?? ""))\n[\(pinyin)]"
+                expectedLabel.numberOfLines = 2
+            } else {
+                expectedLabel.numberOfLines = 1
             }
         }
     }
@@ -149,6 +170,7 @@ final class DiffResultCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         expectedLabel.text = nil
+        expectedLabel.numberOfLines = 1
         actualLabel.text = nil
         arrowLabel.text = nil
     }
