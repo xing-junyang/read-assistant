@@ -8,13 +8,11 @@ final class SettingsViewController: UIViewController {
     private let tableView = UITableView(frame: .zero, style: .grouped)
 
     private enum Section: Int, CaseIterable {
-        case reading
         case general
         case developer
 
         var title: String {
             switch self {
-            case .reading: return "阅读"
             case .general: return "通用"
             case .developer: return "开发者"
             }
@@ -80,7 +78,7 @@ final class SettingsViewController: UIViewController {
     private func buildDataSource() {
         let autoNextEnabled = UserDefaults.standard.bool(forKey: "auto_next_paragraph_enabled")
         
-        var readingItems: [Item] = [
+        var generalItems: [Item] = [
             Item(
                 title: "自动下一段",
                 icon: "⏭",
@@ -91,14 +89,14 @@ final class SettingsViewController: UIViewController {
                 toggleChanged: { [weak self] newValue in
                     UserDefaults.standard.set(newValue, forKey: "auto_next_paragraph_enabled")
                     self?.buildDataSource()
-                    self?.tableView.reloadSections(IndexSet(integer: Section.reading.rawValue), with: .automatic)
+                    self?.tableView.reloadSections(IndexSet(integer: Section.general.rawValue), with: .automatic)
                 }
             )
         ]
         
         // When auto-next is ON, show adjustable parameters below the toggle
         if autoNextEnabled {
-            readingItems.append(contentsOf: [
+            generalItems.append(contentsOf: [
                 Item(
                     title: "静音检测时长",
                     icon: "  ⏱",
@@ -126,25 +124,25 @@ final class SettingsViewController: UIViewController {
             ])
         }
         
-        dataSource = [
-            readingItems,
-            // General
-            [
-                Item(
-                    title: "导入时自动分段",
-                    icon: "📄",
-                    accessoryType: .none,
-                    action: {},
-                    isToggle: true,
-                    toggleValue: UserDefaults.standard.bool(forKey: "auto_split_by_newline_enabled"),
-                    toggleChanged: { newValue in
-                        UserDefaults.standard.set(newValue, forKey: "auto_split_by_newline_enabled")
-                    }
-                ),
-                Item(title: "关于", icon: "ℹ️", accessoryType: .disclosureIndicator) { [weak self] in
-                    self?.navigateToAbout()
+        generalItems.append(contentsOf: [
+            Item(
+                title: "导入时自动分段",
+                icon: "📄",
+                accessoryType: .none,
+                action: {},
+                isToggle: true,
+                toggleValue: UserDefaults.standard.bool(forKey: "auto_split_by_newline_enabled"),
+                toggleChanged: { newValue in
+                    UserDefaults.standard.set(newValue, forKey: "auto_split_by_newline_enabled")
                 }
-            ],
+            ),
+            Item(title: "关于", icon: "ℹ️", accessoryType: .disclosureIndicator) { [weak self] in
+                self?.navigateToAbout()
+            }
+        ])
+        
+        dataSource = [
+            generalItems,
             // Developer
             [
                 Item(title: "开发者设置", icon: "🔧", accessoryType: .disclosureIndicator) { [weak self] in
@@ -315,7 +313,7 @@ extension SettingsViewController: UITableViewDelegate {
             }
             UserDefaults.standard.set(value, forKey: config.key)
             self?.buildDataSource()
-            self?.tableView.reloadSections(IndexSet(integer: Section.reading.rawValue), with: .none)
+            self?.tableView.reloadSections(IndexSet(integer: Section.general.rawValue), with: .none)
         })
         present(alert, animated: true)
     }

@@ -445,6 +445,16 @@ final class ReadingViewController: UIViewController {
         
         // Cancel any pending auto-advance
         cancelAutoNext()
+        
+        // Stop recording if still active — prevents conflict with the next paragraph's
+        // recording session (same guard as executeAutoNext).
+        if isRecording {
+            speechService.stopRecognition()
+            audioRecordingManager.stopRecording(keepFile: true)
+            isRecording = false
+            stopTimer()
+            stopSilenceDetection()
+        }
 
         // Score current session
         if let session = currentSession {
@@ -460,6 +470,21 @@ final class ReadingViewController: UIViewController {
         // Move to next text
         currentTextIndex += 1
         currentSession = nil
+
+        // Reset button states now that recording has been fully stopped
+        recordButton.setTitle("🎤 开始录音", for: .normal)
+        recordButton.backgroundColor = .errorRed
+        pauseButton.isEnabled = false
+        pauseButton.alpha = 0.5
+        pauseButton.setTitle("⏸ 暂停", for: .normal)
+        nextButton.isEnabled = false
+        nextButton.alpha = 0.5
+        timerLabel.text = "00:00"
+        elapsedSeconds = 0
+        statusLabel.text = "准备就绪"
+        statusLabel.textColor = .textSecondary
+        autoNextIndicator.text = isAutoNextEnabled ? "⏭ 自动下一段已开启" : ""
+        autoNextIndicator.textColor = .primary
 
         if currentTextIndex >= task.expectedTexts.count {
             // All done - show aggregate score with option to re-read
