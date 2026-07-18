@@ -125,6 +125,10 @@ final class DiffResultCell: UITableViewCell {
             actualLabel.textColor = .errorRed
             arrowLabel.text = "→"
             arrowLabel.textColor = .errorRed
+            // Show pinyin for short errors to aid learning
+            if let pinyin = segment.expectedPinyin {
+                expectedLabel.text = "\(segment.expectedSegment ?? "")\n[\(pinyin)]"
+            }
         case .homophone:
             typeIndicator.backgroundColor = .warningOrange
             typeLabel.text = "同音"
@@ -135,6 +139,10 @@ final class DiffResultCell: UITableViewCell {
             actualLabel.textColor = .warningOrange
             arrowLabel.text = "→"
             arrowLabel.textColor = .warningOrange
+            // Show pinyin for short homophone errors
+            if let pinyin = segment.expectedPinyin {
+                expectedLabel.text = "\(segment.expectedSegment ?? "")\n[\(pinyin)]"
+            }
         }
     }
 

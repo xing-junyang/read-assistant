@@ -2,9 +2,9 @@ import UIKit
 
 // MARK: - Image Crop Preview View Controller
 /// Shows the captured photo with a draggable four-corner crop overlay.
-/// The user can adjust corners, preview the perspective-corrected result,
-/// then confirm or go back.
-final class ImageCropPreviewViewController: UIViewController {
+/// The user can adjust corners, preview the perspective-corrected result
+/// in real-time, then confirm or go back.
+final class ImageCropPreviewViewController: UIViewController, CropOverlayViewDelegate {
 
     // MARK: - Callbacks
     /// Called when user confirms: provides the perspective-corrected UIImage.
@@ -22,19 +22,22 @@ final class ImageCropPreviewViewController: UIViewController {
     private let imageView = UIImageView()
     private let cropOverlay = CropOverlayView()
     private let instructionLabel = UILabel()
-    private let previewButton = UIButton(type: .system)
     private let confirmButton = UIButton(type: .system)
     private let backButton = UIButton(type: .system)
     private let resetButton = UIButton(type: .system)
     private let activityIndicator = UIActivityIndicatorView(style: .whiteLarge)
 
-    /// Small inset view showing the perspective-corrected preview
+    /// Larger inset view showing the perspective-corrected preview in real-time
     private let previewInsetView = UIView()
     private let previewInsetImageView = UIImageView()
     private let previewInsetLabel = UILabel()
 
-    /// Whether we're currently showing the corrected preview
-    private var isShowingCorrectedPreview = false
+    /// Constraints for draggable preview position
+    private var previewTopConstraint: NSLayoutConstraint?
+    private var previewTrailingConstraint: NSLayoutConstraint?
+
+    /// Throttle preview updates to avoid excessive computation during drag
+    private var previewWorkItem: DispatchWorkItem?
 
     // MARK: - Init
     init(image: UIImage, corners: [CGPoint]) {
@@ -113,15 +116,6 @@ final class ImageCropPreviewViewController: UIViewController {
         resetButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(resetButton)
 
-        previewButton.setTitle("👁 预览校正", for: .normal)
-        previewButton.titleLabel?.font = UIFont.systemFont(ofSize: 15, weight: .semibold)
-        previewButton.setTitleColor(.white, for: .normal)
-        previewButton.backgroundColor = .accent
-        previewButton.layer.cornerRadius = 22
-        previewButton.addTarget(self, action: #selector(previewTapped), for: .touchUpInside)
-        previewButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(previewButton)
-
         confirmButton.setTitle("✓ 确认", for: .normal)
         confirmButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .bold)
         confirmButton.setTitleColor(.white, for: .normal)
@@ -167,11 +161,6 @@ final class ImageCropPreviewViewController: UIViewController {
             resetButton.widthAnchor.constraint(equalToConstant: 70),
             resetButton.heightAnchor.constraint(equalToConstant: 36),
 
-            previewButton.centerYAnchor.constraint(equalTo: backButton.centerYAnchor),
-            previewButton.trailingAnchor.constraint(equalTo: confirmButton.leadingAnchor, constant: -10),
-            previewButton.widthAnchor.constraint(equalToConstant: 110),
-            previewButton.heightAnchor.constraint(equalToConstant: 44),
-
             confirmButton.bottomAnchor.constraint(equalTo: compatSafeAreaBottom, constant: -12),
             confirmButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             confirmButton.widthAnchor.constraint(equalToConstant: 90),
@@ -181,12 +170,17 @@ final class ImageCropPreviewViewController: UIViewController {
             activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
 
-        // Preview inset layout
+        // Preview inset layout - larger, real-time preview, draggable
+        let topConstraint = previewInsetView.topAnchor.constraint(equalTo: compatSafeAreaTop, constant: 12)
+        let trailingConstraint = previewInsetView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12)
+        previewTopConstraint = topConstraint
+        previewTrailingConstraint = trailingConstraint
+
         NSLayoutConstraint.activate([
-            previewInsetView.topAnchor.constraint(equalTo: compatSafeAreaTop, constant: 12),
-            previewInsetView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            previewInsetView.widthAnchor.constraint(equalToConstant: 110),
-            previewInsetView.heightAnchor.constraint(equalToConstant: 155)
+            topConstraint,
+            trailingConstraint,
+            previewInsetView.widthAnchor.constraint(equalToConstant: 160),
+            previewInsetView.heightAnchor.constraint(equalToConstant: 220)
         ])
     }
 
@@ -196,9 +190,13 @@ final class ImageCropPreviewViewController: UIViewController {
         previewInsetView.layer.borderColor = UIColor.white.withAlphaComponent(0.4).cgColor
         previewInsetView.layer.borderWidth = 1
         previewInsetView.clipsToBounds = true
-        previewInsetView.isHidden = true
+        previewInsetView.isHidden = false
         previewInsetView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(previewInsetView)
+
+        // Pan gesture to make preview draggable
+        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePreviewPan(_:)))
+        previewInsetView.addGestureRecognizer(panGesture)
 
         previewInsetImageView.contentMode = .scaleAspectFit
         previewInsetImageView.backgroundColor = .clear
@@ -226,11 +224,14 @@ final class ImageCropPreviewViewController: UIViewController {
 
     // MARK: - Corner Setup
     private func setupCorners() {
+        cropOverlay.delegate = self
         if !initialCorners.isEmpty {
             cropOverlay.setCorners(initialCorners)
         } else {
             setupDefaultCorners()
         }
+        // Trigger initial preview
+        triggerPreviewUpdate()
     }
 
     /// Sets default corners at 15% inset from each edge.
@@ -259,37 +260,88 @@ final class ImageCropPreviewViewController: UIViewController {
             setupDefaultCorners()
         }
         instructionLabel.text = "拖动四个角标记文档区域"
-        previewInsetView.isHidden = true
-        isShowingCorrectedPreview = false
         imageView.image = sourceImage
+        triggerPreviewUpdate()
     }
 
-    @objc private func previewTapped() {
+    // MARK: - CropOverlayViewDelegate
+    func cropOverlayView(_ view: CropOverlayView, didChangeCorners corners: [CGPoint]) {
+        triggerPreviewUpdate()
+    }
+
+    /// Throttled preview update: waits 0.15s after the last drag before computing.
+    private func triggerPreviewUpdate() {
+        previewWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.performPreviewUpdate()
+        }
+        previewWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+    }
+
+    private func performPreviewUpdate() {
         let corners = cropOverlay.corners
         guard corners.count == 4 else { return }
 
-        activityIndicator.startAnimating()
-
-        // Convert overlay coordinates to image coordinates, then do perspective correction
         let imageCorners = convertOverlayCornersToImageSpace(corners)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            guard let corrected = self.performPerspectiveCorrection(corners: imageCorners) else {
-                DispatchQueue.main.async {
-                    self.activityIndicator.stopAnimating()
-                    self.showAlert(title: "校正失败", message: "无法进行透视校正，请调整四角位置")
-                }
-                return
-            }
+            guard let corrected = self.performPerspectiveCorrection(corners: imageCorners) else { return }
 
             DispatchQueue.main.async {
-                self.activityIndicator.stopAnimating()
                 self.previewInsetImageView.image = corrected
-                self.previewInsetView.isHidden = false
-                self.instructionLabel.text = "校正预览已更新，确认无误后点击 ✓ 确认"
-                self.isShowingCorrectedPreview = true
+                self.instructionLabel.text = "拖动四个角标记文档区域，预览自动更新"
             }
+        }
+    }
+
+    // MARK: - Preview Drag
+    @objc private func handlePreviewPan(_ gesture: UIPanGestureRecognizer) {
+        guard let topConstraint = previewTopConstraint,
+              let trailingConstraint = previewTrailingConstraint else { return }
+
+        let translation = gesture.translation(in: view)
+
+        switch gesture.state {
+        case .changed:
+            // Invert Y because trailing stays fixed (drag moves opposite direction)
+            topConstraint.constant += translation.y
+            trailingConstraint.constant += translation.x
+            gesture.setTranslation(.zero, in: view)
+
+        case .ended, .cancelled:
+            // Clamp to visible bounds
+            let previewWidth: CGFloat = 160
+            let previewHeight: CGFloat = 220
+
+            var safeTop: CGFloat = 0
+            var safeBottom: CGFloat = view.bounds.height
+            if #available(iOS 11.0, *) {
+                safeTop = view.safeAreaInsets.top
+                safeBottom = view.bounds.height - view.safeAreaInsets.bottom
+            } else {
+                safeTop = topLayoutGuide.length
+                safeBottom = view.bounds.height - bottomLayoutGuide.length
+            }
+
+            let minX: CGFloat = -previewWidth + 40
+            let maxRight: CGFloat = view.bounds.width - 40
+            let maxY: CGFloat = safeBottom - previewHeight
+
+            let currentRight = view.bounds.width + trailingConstraint.constant
+            var clampedX = currentRight - previewWidth
+            clampedX = max(minX, min(maxRight - previewWidth, clampedX))
+
+            topConstraint.constant = max(safeTop, min(maxY, topConstraint.constant))
+            trailingConstraint.constant = -(view.bounds.width - clampedX - previewWidth)
+
+            UIView.animate(withDuration: 0.2) {
+                self.view.layoutIfNeeded()
+            }
+
+        default:
+            break
         }
     }
 

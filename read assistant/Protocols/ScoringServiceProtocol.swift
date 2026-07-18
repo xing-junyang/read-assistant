@@ -125,4 +125,17 @@ class DiffSegment: NSObject, NSCoding {
         self.actualRange = NSRange(location: actLoc, length: actLen)
         super.init()
     }
+
+    // MARK: - Pinyin Helper
+    /// Returns pinyin for the expected segment (only for short errors ≤4 chars).
+    /// Uses CFStringTransform for built-in iOS pinyin conversion.
+    var expectedPinyin: String? {
+        guard let text = expectedSegment, !text.isEmpty else { return nil }
+        // Only annotate short errors (≤4 characters)
+        guard text.count <= 4 else { return nil }
+        let mutable = NSMutableString(string: text)
+        CFStringTransform(mutable, nil, kCFStringTransformToLatin, false)
+        let raw = (mutable as String).lowercased().replacingOccurrences(of: " ", with: "")
+        return raw.isEmpty ? nil : raw
+    }
 }
