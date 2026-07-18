@@ -1,9 +1,9 @@
-CLANG_CXX_LIBRARY = compiler-default
+CLANG_CXX_LIBRARY = libc++
 CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = NO
 CONFIGURATION_BUILD_DIR = ${PODS_CONFIGURATION_BUILD_DIR}/TesseractOCRiOS
 GCC_PREPROCESSOR_DEFINITIONS = $(inherited) COCOAPODS=1
 LIBRARY_SEARCH_PATHS = $(inherited) "${PODS_ROOT}/../tesseract/TesseractOCR-iOS-local/TesseractOCR/lib"
-OTHER_LDFLAGS = $(inherited) -weak_library /usr/lib/libstdc++.6.0.9.dylib -l"lept" -l"stdc++" -l"tesseract_all" -framework "Foundation" -framework "UIKit"
+OTHER_LDFLAGS = $(inherited) -l"c++" -l"lept" -l"tesseract_all" -framework "Foundation" -framework "UIKit"
 PODS_BUILD_DIR = ${BUILD_DIR}
 PODS_CONFIGURATION_BUILD_DIR = ${PODS_BUILD_DIR}/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)
 PODS_DEVELOPMENT_LANGUAGE = ${DEVELOPMENT_LANGUAGE}

@@ -20,6 +20,8 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A3AB90B3300A56C90020BF54 /* read assistant */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "read assistant";
 			sourceTree = "<group>";
 		};
@@ -150,13 +152,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-read assistant/Pods-read assistant-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-read assistant/Pods-read assistant-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

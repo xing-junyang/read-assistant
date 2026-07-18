@@ -34,7 +34,7 @@
     "vendored_libraries": "TesseractOCR/lib/*.a"
   },
   "xcconfig": {
-    "OTHER_LDFLAGS": "-lstdc++ -weak_library /usr/lib/libstdc++.6.0.9.dylib",
-    "CLANG_CXX_LIBRARY": "compiler-default"
+    "OTHER_LDFLAGS": "-lc++",
+    "CLANG_CXX_LIBRARY": "libc++"
   }
 }
