@@ -23,7 +23,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             NSAttributedString.Key.foregroundColor: UIColor.textPrimary
         ]
         homeNav.navigationBar.isTranslucent = false
-        homeNav.tabBarItem = UITabBarItem(title: "首页", image: nil, tag: 0)
+        homeNav.tabBarItem = UITabBarItem(
+            title: "首页",
+            image: Self.emojiIcon("📖"),
+            tag: 0
+        )
 
         // --- Tab 2: Settings ---
         let settingsVC = SettingsViewController()
@@ -34,7 +38,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             NSAttributedString.Key.foregroundColor: UIColor.textPrimary
         ]
         settingsNav.navigationBar.isTranslucent = false
-        settingsNav.tabBarItem = UITabBarItem(title: "设置", image: nil, tag: 1)
+        settingsNav.tabBarItem = UITabBarItem(
+            title: "设置",
+            image: Self.emojiIcon("⚙️"),
+            tag: 1
+        )
 
         // --- Tab Bar Controller ---
         let tabBarController = UITabBarController()
@@ -67,5 +75,20 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationWillTerminate(_ application: UIApplication) {
         // Called when the application is about to terminate.
+    }
+
+    // MARK: - Tab Bar Icons (iOS 10 compatible, rendered from emoji)
+
+    /// Renders an emoji character into a template UIImage for tab bar use.
+    private static func emojiIcon(_ emoji: String) -> UIImage {
+        let size = CGSize(width: 24, height: 24)
+        UIGraphicsBeginImageContextWithOptions(size, false, 0)
+        let rect = CGRect(origin: .zero, size: size)
+        (emoji as NSString).draw(in: rect, withAttributes: [
+            .font: UIFont.systemFont(ofSize: 22)
+        ])
+        let image = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        return image?.withRenderingMode(.alwaysTemplate) ?? UIImage()
     }
 }
