@@ -4,13 +4,10 @@ import TesseractOCR
 // MARK: - Tesseract OCR Service
 /// OCR implementation using TesseractOCRiOS (CocoaPods).
 ///
-/// Integration steps:
-/// 1. Add `pod 'TesseractOCRiOS', '~> 4.0.0'` to Podfile, then run `pod install`
-/// 2. Download `chi_sim.traineddata` from https://github.com/tesseract-ocr/tessdata
-/// 3. Drag the .traineddata file into Xcode (Copy Bundle Resources)
-///
-/// The G8Tesseract class comes from the TesseractOCRiOS pod and wraps
-/// the Tesseract 4.x C++ engine for iOS.
+/// Uses G8RecognitionOperation (NSOperation-based) per the library's
+/// recommended pattern. This avoids thread-safety pitfalls and
+/// memory-management issues that arise from manually reusing G8Tesseract
+/// instances across multiple recognitions.
 final class TesseractOCRService: OCRServiceProtocol {
 
     // MARK: - Properties
@@ -21,22 +18,20 @@ final class TesseractOCRService: OCRServiceProtocol {
     /// excessive memory usage that causes EXC_BAD_ACCESS on mobile devices.
     private static let maxImageDimension: CGFloat = 2048
 
-    /// Serial queue to prevent concurrent Tesseract operations,
-    /// since the underlying C++ engine and its global caches are not thread-safe.
-    private let recognitionQueue = DispatchQueue(label: "com.readassistant.tesseract",
-                                                  qos: .userInitiated)
-
-    /// Reuse a single G8Tesseract instance across recognitions.
-    /// Creating a new instance each time calls Init() repeatedly,
-    /// which corrupts Tesseract's global language-data caches and
-    /// causes EXC_BAD_ACCESS on the second recognition.
-    private var tesseract: G8Tesseract?
+    /// Serial operation queue for recognition operations.
+    /// Tesseract's underlying C++ engine and global caches are not
+    /// thread-safe, so we process one recognition at a time.
+    private let operationQueue: OperationQueue = {
+        let q = OperationQueue()
+        q.maxConcurrentOperationCount = 1
+        q.qualityOfService = .userInitiated
+        return q
+    }()
 
     // MARK: - OCRServiceProtocol
 
     func recognizeText(from image: UIImage, completion: @escaping (Result<String, Error>) -> Void) {
         // Prep image on calling thread: downscale + stable bitmap copy.
-        // This keeps memory manageable and ensures data independence.
         guard let prepared = Self.prepareImage(image) else {
             DispatchQueue.main.async {
                 completion(.failure(OCRServiceError.recognitionFailed("图片数据无效")))
@@ -44,63 +39,48 @@ final class TesseractOCRService: OCRServiceProtocol {
             return
         }
 
-        recognitionQueue.async { [weak self] in
-            guard let self = self else { return }
-
-            // Reuse existing instance or create one on first use.
-            // Repeated Init() calls across separate instances corrupt
-            // Tesseract's global caches.
-            let tesseract: G8Tesseract
-            if let existing = self.tesseract {
-                tesseract = existing
-            } else {
-                // Clear any stale global caches left by a previous instance
-                // (e.g. if the user dismissed and reopened the OCR screen).
-                G8Tesseract.clearCache()
-
-                let languageString = self.recognitionLanguages.joined(separator: "+")
-                guard let newInstance = G8Tesseract(language: languageString) else {
-                    DispatchQueue.main.async {
-                        let lang = self.recognitionLanguages.joined(separator: ", ")
-                        completion(.failure(OCRServiceError.initializationFailed(
-                            "无法初始化 Tesseract 引擎。请确认 \(lang) 语言包已添加到 Bundle。")))
-                    }
-                    return
-                }
-                newInstance.engineMode = .tesseractOnly
-                newInstance.pageSegmentationMode = .auto
-                self.tesseract = newInstance
-                tesseract = newInstance
-            }
-
-            tesseract.image = prepared
-
-            // Perform recognition
-            tesseract.recognize()
-
-            let text = tesseract.recognizedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
+        // G8RecognitionOperation creates its own G8Tesseract internally,
+        // avoiding lifetime / cache-corruption issues from manual reuse.
+        // ⚠️ The library does NOT return nil when Tesseract init fails —
+        //    operation.tesseract will be nil instead. We must check for that.
+        let languageString = recognitionLanguages.joined(separator: "+")
+        guard let operation = G8RecognitionOperation(language: languageString),
+              operation.tesseract != nil else {
             DispatchQueue.main.async {
-                if text.isEmpty {
-                    completion(.failure(OCRServiceError.recognitionFailed("未识别到文字")))
-                } else {
-                    completion(.success(text))
-                }
+                let lang = self.recognitionLanguages.joined(separator: ", ")
+                completion(.failure(OCRServiceError.initializationFailed(
+                    "无法初始化 Tesseract 引擎。请确认 \(lang) 语言包已添加到 Bundle。")))
+            }
+            return
+        }
+
+        operation.tesseract.engineMode = .tesseractOnly
+        operation.tesseract.pageSegmentationMode = .auto
+        operation.tesseract.image = prepared
+
+        // Called on main thread when recognition finishes.
+        operation.recognitionCompleteBlock = { tesseract in
+            let text = tesseract?.recognizedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if text.isEmpty {
+                completion(.failure(OCRServiceError.recognitionFailed("未识别到文字")))
+            } else {
+                completion(.success(text))
             }
         }
+
+        operationQueue.addOperation(operation)
     }
 
     // MARK: - Image Preparation
-    /// Downscales (if needed) and creates a self-contained bitmap copy of the image.
-    /// Full camera-resolution photos are downscaled to prevent excessive memory usage
-    /// (Tesseract internally copies the image multiple times, easily exceeding 150MB).
+    /// Downscales (if needed) and creates a self-contained grayscale bitmap
+    /// copy of the image. Using 8-bit gray avoids alpha-channel ambiguities
+    /// in G8Tesseract.pixForImage:.
     private static func prepareImage(_ image: UIImage) -> UIImage? {
         guard let cgImage = image.cgImage else { return nil }
 
         let origWidth = CGFloat(cgImage.width)
         let origHeight = CGFloat(cgImage.height)
 
-        // Downscale if either dimension exceeds the limit
         let scale: CGFloat
         if origWidth > maxImageDimension || origHeight > maxImageDimension {
             scale = min(maxImageDimension / origWidth, maxImageDimension / origHeight)
@@ -108,19 +88,27 @@ final class TesseractOCRService: OCRServiceProtocol {
             scale = 1.0
         }
 
-        let targetWidth = origWidth * scale
-        let targetHeight = origHeight * scale
+        let targetWidth = Int(origWidth * scale)
+        let targetHeight = Int(origHeight * scale)
 
-        UIGraphicsBeginImageContextWithOptions(
-            CGSize(width: targetWidth, height: targetHeight),
-            false, 1.0
-        )
-        defer { UIGraphicsEndImageContext() }
+        // Create an 8-bit grayscale context (no alpha).
+        // This avoids the complex 32-bit byte-swizzling in pixForImage:,
+        // going through the simple 8-bit copy path instead.
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        guard let context = CGContext(
+            data: nil,
+            width: targetWidth,
+            height: targetHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: targetWidth,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return nil }
 
-        guard let context = UIGraphicsGetCurrentContext() else { return nil }
         context.interpolationQuality = .high
-        image.draw(in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
 
-        return UIGraphicsGetImageFromCurrentImageContext()
+        guard let outputCGImage = context.makeImage() else { return nil }
+        return UIImage(cgImage: outputCGImage)
     }
 }
