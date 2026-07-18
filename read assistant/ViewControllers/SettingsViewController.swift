@@ -26,10 +26,24 @@ final class SettingsViewController: UIViewController {
         let icon: String
         let accessoryType: UITableViewCell.AccessoryType
         let action: () -> Void
-        /// If non-nil, this item is a toggle. The Bool indicates the current state.
+        /// If true, this item is a toggle. The Bool indicates the current state.
         var isToggle: Bool = false
         var toggleValue: Bool = false
         var toggleChanged: ((Bool) -> Void)? = nil
+        /// If non-nil, shows a value label on the right (used for adjustable parameters).
+        var valueText: String? = nil
+        /// If non-nil, this item is an adjustable numeric parameter with a unit suffix.
+        var adjustmentConfig: AdjustmentConfig? = nil
+    }
+    
+    /// Configuration for a numeric adjustment item (tap to edit via alert).
+    struct AdjustmentConfig {
+        let key: String
+        let unit: String
+        let defaultValue: Double
+        let minValue: Double
+        let maxValue: Double
+        let decimalPlaces: Int
     }
 
     private var dataSource: [[Item]] = []
@@ -64,21 +78,56 @@ final class SettingsViewController: UIViewController {
     }
 
     private func buildDataSource() {
-        dataSource = [
-            // Reading
-            [
+        let autoNextEnabled = UserDefaults.standard.bool(forKey: "auto_next_paragraph_enabled")
+        
+        var readingItems: [Item] = [
+            Item(
+                title: "自动下一段",
+                icon: "⏭",
+                accessoryType: .none,
+                action: {},
+                isToggle: true,
+                toggleValue: autoNextEnabled,
+                toggleChanged: { [weak self] newValue in
+                    UserDefaults.standard.set(newValue, forKey: "auto_next_paragraph_enabled")
+                    self?.buildDataSource()
+                    self?.tableView.reloadSections(IndexSet(integer: Section.reading.rawValue), with: .automatic)
+                }
+            )
+        ]
+        
+        // When auto-next is ON, show adjustable parameters below the toggle
+        if autoNextEnabled {
+            readingItems.append(contentsOf: [
                 Item(
-                    title: "自动下一段",
-                    icon: "⏭",
-                    accessoryType: .none,
+                    title: "静音检测时长",
+                    icon: "  ⏱",
+                    accessoryType: .disclosureIndicator,
                     action: {},
-                    isToggle: true,
-                    toggleValue: UserDefaults.standard.bool(forKey: "auto_next_paragraph_enabled"),
-                    toggleChanged: { [weak self] newValue in
-                        UserDefaults.standard.set(newValue, forKey: "auto_next_paragraph_enabled")
-                    }
+                    valueText: formatAdjustmentValue(forKey: "auto_next_silence_threshold", defaultValue: 2.0, unit: "秒", decimalPlaces: 1),
+                    adjustmentConfig: AdjustmentConfig(key: "auto_next_silence_threshold", unit: "秒", defaultValue: 2.0, minValue: 1.0, maxValue: 5.0, decimalPlaces: 1)
+                ),
+                Item(
+                    title: "评分阈值",
+                    icon: "  🎯",
+                    accessoryType: .disclosureIndicator,
+                    action: {},
+                    valueText: formatAdjustmentValue(forKey: "auto_next_score_threshold", defaultValue: 50.0, unit: "%", decimalPlaces: 0),
+                    adjustmentConfig: AdjustmentConfig(key: "auto_next_score_threshold", unit: "%", defaultValue: 50.0, minValue: 10.0, maxValue: 95.0, decimalPlaces: 0)
+                ),
+                Item(
+                    title: "跳转延迟",
+                    icon: "  ⏭",
+                    accessoryType: .disclosureIndicator,
+                    action: {},
+                    valueText: formatAdjustmentValue(forKey: "auto_next_delay", defaultValue: 1.5, unit: "秒", decimalPlaces: 1),
+                    adjustmentConfig: AdjustmentConfig(key: "auto_next_delay", unit: "秒", defaultValue: 1.5, minValue: 0.5, maxValue: 5.0, decimalPlaces: 1)
                 )
-            ],
+            ])
+        }
+        
+        dataSource = [
+            readingItems,
             // General
             [
                 Item(title: "关于", icon: "ℹ️", accessoryType: .disclosureIndicator) { [weak self] in
@@ -92,6 +141,18 @@ final class SettingsViewController: UIViewController {
                 }
             ]
         ]
+    }
+    
+    /// Reads a UserDefaults double value (or returns the default) and formats it with unit.
+    private func formatAdjustmentValue(forKey key: String, defaultValue: Double, unit: String, decimalPlaces: Int) -> String {
+        let value: Double
+        if UserDefaults.standard.object(forKey: key) != nil {
+            value = UserDefaults.standard.double(forKey: key)
+        } else {
+            value = defaultValue
+        }
+        let format = decimalPlaces == 0 ? "%.0f" : "%.\(decimalPlaces)f"
+        return String(format: "\(format) \(unit)", value)
     }
 
     // MARK: - Navigation
@@ -163,6 +224,25 @@ extension SettingsViewController: UITableViewDataSource {
             return cell
         }
         
+        // Check if item has a value text (adjustable parameter)
+        if let valueText = item.valueText {
+            let cell: UITableViewCell
+            if let reusedCell = tableView.dequeueReusableCell(withIdentifier: "SettingsValueCell") {
+                cell = reusedCell
+            } else {
+                cell = UITableViewCell(style: .value1, reuseIdentifier: "SettingsValueCell")
+            }
+            cell.textLabel?.text = "\(item.icon)  \(item.title)"
+            cell.textLabel?.font = UIFont.systemFont(ofSize: 16)
+            cell.textLabel?.textColor = .textPrimary
+            cell.detailTextLabel?.text = valueText
+            cell.detailTextLabel?.font = UIFont.systemFont(ofSize: 14)
+            cell.detailTextLabel?.textColor = .primary
+            cell.accessoryType = item.accessoryType
+            cell.backgroundColor = .cardBackground
+            return cell
+        }
+        
         let cell = tableView.dequeueReusableCell(withIdentifier: "SettingsCell", for: indexPath)
         cell.textLabel?.text = "\(item.icon)  \(item.title)"
         cell.textLabel?.font = UIFont.systemFont(ofSize: 16)
@@ -182,9 +262,51 @@ extension SettingsViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let item = dataSource[indexPath.section][indexPath.row]
-        if !item.isToggle {
+        if item.isToggle { return }
+        
+        if let config = item.adjustmentConfig {
+            showAdjustmentAlert(for: config)
+        } else {
             item.action()
         }
+    }
+    
+    /// Shows an alert with a text field to adjust a numeric parameter.
+    private func showAdjustmentAlert(for config: AdjustmentConfig) {
+        let currentValue: Double
+        if UserDefaults.standard.object(forKey: config.key) != nil {
+            currentValue = UserDefaults.standard.double(forKey: config.key)
+        } else {
+            currentValue = config.defaultValue
+        }
+        
+        let alert = UIAlertController(
+            title: "调整参数",
+            message: "当前值：\(String(format: config.decimalPlaces == 0 ? "%.0f" : "%.\(config.decimalPlaces)f", currentValue)) \(config.unit)\n范围：\(String(format: config.decimalPlaces == 0 ? "%.0f" : "%.\(config.decimalPlaces)f", config.minValue)) – \(String(format: config.decimalPlaces == 0 ? "%.0f" : "%.\(config.decimalPlaces)f", config.maxValue)) \(config.unit)",
+            preferredStyle: .alert
+        )
+        alert.addTextField { textField in
+            textField.text = config.decimalPlaces == 0
+                ? String(format: "%.0f", currentValue)
+                : String(format: "%.\(config.decimalPlaces)f", currentValue)
+            textField.keyboardType = config.decimalPlaces == 0 ? .numberPad : .decimalPad
+            textField.placeholder = config.decimalPlaces == 0
+                ? String(format: "%.0f", config.defaultValue)
+                : String(format: "%.\(config.decimalPlaces)f", config.defaultValue)
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "保存", style: .default) { [weak self] _ in
+            guard let text = alert.textFields?.first?.text,
+                  let value = Double(text),
+                  value >= config.minValue, value <= config.maxValue else {
+                self?.showAlert(title: "无效输入", message: "请输入 \(config.minValue)–\(config.maxValue) 之间的数值")
+                return
+            }
+            UserDefaults.standard.set(value, forKey: config.key)
+            self?.buildDataSource()
+            self?.tableView.reloadSections(IndexSet(integer: Section.reading.rawValue), with: .none)
+        })
+        present(alert, animated: true)
     }
     
     @objc private func toggleChanged(_ sender: UISwitch) {

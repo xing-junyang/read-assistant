@@ -30,10 +30,14 @@ final class ReadingViewController: UIViewController {
     private var isAutoNextEnabled: Bool {
         return UserDefaults.standard.bool(forKey: "auto_next_paragraph_enabled")
     }
-    /// Threshold: minimum score (0-100) required to auto-advance.
-    private let autoNextScoreThreshold: Double = 50.0
-    /// Delay in seconds before auto-advancing after a good match.
-    private let autoNextDelay: TimeInterval = 1.5
+    /// Threshold: minimum score (0-100) required to auto-advance. Configurable in Settings.
+    private var autoNextScoreThreshold: Double {
+        return userDefaultsDouble(forKey: "auto_next_score_threshold", defaultValue: 50.0)
+    }
+    /// Delay in seconds before auto-advancing after a good match. Configurable in Settings.
+    private var autoNextDelay: TimeInterval {
+        return userDefaultsDouble(forKey: "auto_next_delay", defaultValue: 1.5)
+    }
     /// Pending auto-advance work item (cancellable).
     private var autoNextWorkItem: DispatchWorkItem?
     
@@ -44,10 +48,18 @@ final class ReadingViewController: UIViewController {
     private var lastPartialResultText: String = ""
     /// Timer that periodically checks if the user has stopped speaking.
     private var silenceDetectionTimer: Timer?
-    /// Silence duration required before considering the user has finished speaking.
-    private let silenceThreshold: TimeInterval = 2.0
+    /// Silence duration required before considering the user has finished speaking. Configurable in Settings.
+    private var silenceThreshold: TimeInterval {
+        return userDefaultsDouble(forKey: "auto_next_silence_threshold", defaultValue: 2.0)
+    }
     /// Prevents double-triggering auto-advance for the same paragraph.
     private var hasAutoAdvancedForCurrentText: Bool = false
+    
+    /// Helper: reads a UserDefaults double, returning defaultValue if never set.
+    private func userDefaultsDouble(forKey key: String, defaultValue: Double) -> Double {
+        guard UserDefaults.standard.object(forKey: key) != nil else { return defaultValue }
+        return UserDefaults.standard.double(forKey: key)
+    }
 
     // MARK: - Subviews
     private let scrollView = UIScrollView()
