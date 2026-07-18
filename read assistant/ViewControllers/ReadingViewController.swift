@@ -25,6 +25,29 @@ final class ReadingViewController: UIViewController {
     // Timer for duration display
     private var timer: Timer?
     private var elapsedSeconds: Int = 0
+    
+    // Auto-next-paragraph mode
+    private var isAutoNextEnabled: Bool {
+        return UserDefaults.standard.bool(forKey: "auto_next_paragraph_enabled")
+    }
+    /// Threshold: minimum score (0-100) required to auto-advance.
+    private let autoNextScoreThreshold: Double = 50.0
+    /// Delay in seconds before auto-advancing after a good match.
+    private let autoNextDelay: TimeInterval = 1.5
+    /// Pending auto-advance work item (cancellable).
+    private var autoNextWorkItem: DispatchWorkItem?
+    
+    // Silence detection for auto-next (since SFSpeechRecognizer.isFinal rarely fires during live recording)
+    /// Timestamp of the last partial result received.
+    private var lastPartialResultTime: Date = Date()
+    /// The latest partial result text.
+    private var lastPartialResultText: String = ""
+    /// Timer that periodically checks if the user has stopped speaking.
+    private var silenceDetectionTimer: Timer?
+    /// Silence duration required before considering the user has finished speaking.
+    private let silenceThreshold: TimeInterval = 2.0
+    /// Prevents double-triggering auto-advance for the same paragraph.
+    private var hasAutoAdvancedForCurrentText: Bool = false
 
     // MARK: - Subviews
     private let scrollView = UIScrollView()
@@ -34,6 +57,7 @@ final class ReadingViewController: UIViewController {
     private let expectedTextLabel = UILabel()
     private let recognizedTextLabel = UILabel()
     private let statusLabel = UILabel()
+    private let autoNextIndicator = UILabel()
     private let timerLabel = UILabel()
     private let recordButton = UIButton(type: .system)
     private let pauseButton = UIButton(type: .system)
@@ -138,6 +162,13 @@ final class ReadingViewController: UIViewController {
         statusLabel.textAlignment = .center
         statusLabel.text = "准备就绪"
         contentStack.addArrangedSubview(statusLabel)
+        
+        // Auto-next indicator
+        autoNextIndicator.font = UIFont.systemFont(ofSize: 12)
+        autoNextIndicator.textColor = .primary
+        autoNextIndicator.textAlignment = .center
+        autoNextIndicator.text = isAutoNextEnabled ? "⏭ 自动下一段已开启" : ""
+        contentStack.addArrangedSubview(autoNextIndicator)
 
         // Separator
         let separator2 = createSeparator()
@@ -233,10 +264,16 @@ final class ReadingViewController: UIViewController {
             statusLabel.text = "准备就绪 - 第 \(currentTextIndex + 1)/\(task.expectedTexts.count) 段"
             nextButton.isEnabled = false
             nextButton.alpha = 0.5
+            autoNextIndicator.text = isAutoNextEnabled ? "⏭ 自动下一段已开启" : ""
+            // Reset auto-advance state for new paragraph
+            hasAutoAdvancedForCurrentText = false
+            lastPartialResultTime = Date()
+            lastPartialResultText = ""
         } else {
             expectedTextLabel.text = "全部完成！"
             recognizedTextLabel.text = ""
             statusLabel.text = "所有文本已阅读完毕"
+            autoNextIndicator.text = ""
         }
 
         updateProgressView()
@@ -281,6 +318,11 @@ final class ReadingViewController: UIViewController {
             guard let self = self else { return }
             if granted {
                 do {
+                    // Cancel any pending auto-advance since user is manually starting
+                    self.cancelAutoNext()
+                    self.autoNextIndicator.text = self.isAutoNextEnabled ? "⏭ 自动下一段已开启" : ""
+                    self.autoNextIndicator.textColor = .primary
+                    
                     // Delete old audio file if re-recording
                     if let oldPath = self.currentSession?.audioFilePath {
                         AudioRecordingManager.deleteAudioFile(at: oldPath)
@@ -302,6 +344,15 @@ final class ReadingViewController: UIViewController {
                     try self.speechService.startRecognition(locale: Locale(identifier: "zh-CN"), contextualStrings: contextualStrings)
                     self.isRecording = true
                     self.startTimer()
+                    
+                    // Silence detection: only active when auto-next mode is ON.
+                    // When OFF, the user manually stops recording (→ endAudio()).
+                    self.lastPartialResultTime = Date()
+                    self.lastPartialResultText = ""
+                    self.hasAutoAdvancedForCurrentText = false
+                    if self.isAutoNextEnabled {
+                        self.startSilenceDetection()
+                    }
 
                     self.recordButton.setTitle("⏹ 停止录音", for: .normal)
                     self.recordButton.backgroundColor = .textSecondary
@@ -319,6 +370,12 @@ final class ReadingViewController: UIViewController {
     }
 
     private func stopRecording() {
+        // Cancel any pending auto-advance (no-op when auto-next is OFF)
+        cancelAutoNext()
+        stopSilenceDetection()
+        
+        // Always call stopRecognition() → endAudio() so the recognizer can
+        // produce a final result. This is the normal path for manual-stop mode.
         speechService.stopRecognition()
         audioRecordingManager.stopRecording(keepFile: true)
         isRecording = false
@@ -336,6 +393,10 @@ final class ReadingViewController: UIViewController {
         let hasText = !recognizedTextLabel.text!.isEmpty && recognizedTextLabel.text != "等待录音..."
         nextButton.isEnabled = hasText
         nextButton.alpha = hasText ? 1.0 : 0.5
+        
+        // Reset auto-next indicator
+        autoNextIndicator.text = isAutoNextEnabled ? "⏭ 自动下一段已开启" : ""
+        autoNextIndicator.textColor = .primary
     }
 
     @objc private func pauseButtonTapped() {
@@ -346,6 +407,7 @@ final class ReadingViewController: UIViewController {
             statusLabel.text = "已暂停"
             statusLabel.textColor = .warningOrange
             stopTimer()
+            stopSilenceDetection()
         } else {
             do {
                 try speechService.resumeRecognition()
@@ -354,6 +416,12 @@ final class ReadingViewController: UIViewController {
                 statusLabel.text = "正在录音..."
                 statusLabel.textColor = .errorRed
                 startTimer()
+                // Reset silence detection on resume (only if auto-next is ON)
+                lastPartialResultTime = Date()
+                lastPartialResultText = ""
+                if isAutoNextEnabled {
+                    startSilenceDetection()
+                }
             } catch {
                 showAlert(title: "恢复失败", message: error.localizedDescription)
             }
@@ -362,6 +430,9 @@ final class ReadingViewController: UIViewController {
 
     @objc private func nextButtonTapped() {
         guard let task = task else { return }
+        
+        // Cancel any pending auto-advance
+        cancelAutoNext()
 
         // Score current session
         if let session = currentSession {
@@ -529,22 +600,249 @@ final class ReadingViewController: UIViewController {
 extension ReadingViewController: SpeechRecognitionServiceDelegate {
     func speechRecognitionService(_ service: Any, didProducePartialResult text: String) {
         recognizedTextLabel.text = text
+        
+        // Only track timing for silence detection when auto-next mode is ON.
+        // When OFF, the normal manual-stop → endAudio() path is used instead.
+        guard isAutoNextEnabled else { return }
+        lastPartialResultTime = Date()
+        lastPartialResultText = text
     }
 
     func speechRecognitionService(_ service: Any, didProduceFinalResult text: String) {
         recognizedTextLabel.text = text
-        nextButton.isEnabled = true
-        nextButton.alpha = 1.0
+        
+        if isAutoNextEnabled && isRecording && !hasAutoAdvancedForCurrentText {
+            // Auto-next mode ON: fast-path auto-advance via final result
+            lastPartialResultTime = Date()
+            lastPartialResultText = text
+            handleAutoNextAfterFinalResult(text: text)
+        } else {
+            // Auto-next mode OFF (or already advanced): behave as normal —
+            // enable next button so user can manually advance after stopping.
+            // endAudio() will be called when user taps stop (→ stopRecording() → speechService.stopRecognition()).
+            nextButton.isEnabled = true
+            nextButton.alpha = 1.0
+        }
     }
 
     func speechRecognitionService(_ service: Any, didEncounterError error: Error) {
         statusLabel.text = "错误: \(error.localizedDescription)"
         statusLabel.textColor = .errorRed
+        cancelAutoNext()
+        stopSilenceDetection()
         stopRecording()
     }
 
     func speechRecognitionServiceDidFinish(_ service: Any) {
         statusLabel.text = "识别完成"
         statusLabel.textColor = .successGreen
+    }
+    
+    // MARK: - Silence Detection (Auto-Next Core)
+    
+    /// Starts a timer that periodically checks whether the user has stopped speaking.
+    /// When silence exceeds `silenceThreshold`, triggers auto-next scoring.
+    private func startSilenceDetection() {
+        guard isAutoNextEnabled else { return }
+        
+        stopSilenceDetection()
+        silenceDetectionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.checkSilence()
+        }
+    }
+    
+    /// Stops the silence detection timer.
+    private func stopSilenceDetection() {
+        silenceDetectionTimer?.invalidate()
+        silenceDetectionTimer = nil
+    }
+    
+    /// Checks if the user has been silent long enough to trigger auto-next.
+    private func checkSilence() {
+        guard isAutoNextEnabled, isRecording, !hasAutoAdvancedForCurrentText else { return }
+        guard !lastPartialResultText.isEmpty else { return }
+        
+        let elapsed = Date().timeIntervalSince(lastPartialResultTime)
+        guard elapsed >= silenceThreshold else { return }
+        
+        // User has been silent for long enough — treat as finished speaking
+        hasAutoAdvancedForCurrentText = true
+        stopSilenceDetection()
+        
+        // Show countdown in indicator
+        autoNextIndicator.text = "⏭ 检测到朗读结束，\(Int(autoNextDelay))秒后自动跳转..."
+        autoNextIndicator.textColor = .successGreen
+        
+        // Schedule auto-advance after short delay
+        autoNextWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.executeAutoNextFromSilence()
+        }
+        autoNextWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + autoNextDelay, execute: workItem)
+    }
+    
+    // MARK: - Auto-Next Logic
+    
+    /// Called when speech recognition produces a final result and auto-next is enabled.
+    /// Scores the recognized text and auto-advances if the score meets the threshold.
+    private func handleAutoNextAfterFinalResult(text: String) {
+        guard let task = task, currentTextIndex < task.expectedTexts.count else { return }
+        guard !hasAutoAdvancedForCurrentText else { return }
+        
+        let expected = task.expectedTexts[currentTextIndex]
+        let result = scoringService.compare(expected: expected, actual: text)
+        
+        // Update the current session with scoring info
+        currentSession?.recognizedText = text
+        currentSession?.result = result
+        
+        hasAutoAdvancedForCurrentText = true
+        stopSilenceDetection()
+        
+        if result.score >= autoNextScoreThreshold {
+            autoNextIndicator.text = "⏭ 匹配度 \(Int(result.score))%，\(Int(autoNextDelay))秒后自动跳转..."
+            autoNextIndicator.textColor = .successGreen
+            
+            autoNextWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.executeAutoNext()
+            }
+            autoNextWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + autoNextDelay, execute: workItem)
+        } else {
+            autoNextIndicator.text = "⏭ 匹配度 \(Int(result.score))% 偏低，请手动确认"
+            autoNextIndicator.textColor = .warningOrange
+            nextButton.isEnabled = true
+            nextButton.alpha = 1.0
+        }
+    }
+    
+    /// Called from silence detection — scores the latest partial result and
+    /// auto-advances if the match is good enough.
+    private func executeAutoNextFromSilence() {
+        guard let task = task, currentTextIndex < task.expectedTexts.count else { return }
+        guard isAutoNextEnabled, hasAutoAdvancedForCurrentText else { return }
+        
+        let expected = task.expectedTexts[currentTextIndex]
+        let actual = lastPartialResultText
+        let result = scoringService.compare(expected: expected, actual: actual)
+        
+        // Update session with scoring info
+        currentSession?.recognizedText = actual
+        currentSession?.result = result
+        
+        if result.score >= autoNextScoreThreshold {
+            executeAutoNext()
+        } else {
+            // Score too low — don't auto-advance, let user decide manually
+            autoNextIndicator.text = "⏭ 匹配度 \(Int(result.score))% 偏低，请手动确认"
+            autoNextIndicator.textColor = .warningOrange
+            nextButton.isEnabled = true
+            nextButton.alpha = 1.0
+        }
+    }
+    
+    /// Cancels any pending auto-advance.
+    private func cancelAutoNext() {
+        autoNextWorkItem?.cancel()
+        autoNextWorkItem = nil
+    }
+    
+    /// Executes the auto-advance: scores, saves session, moves to next paragraph,
+    /// and optionally auto-starts recording.
+    private func executeAutoNext() {
+        guard let task = task, currentTextIndex < task.expectedTexts.count else { return }
+        guard isAutoNextEnabled else { return }
+        
+        // Stop recording if still active
+        if isRecording {
+            speechService.stopRecognition()
+            audioRecordingManager.stopRecording(keepFile: true)
+            isRecording = false
+            stopTimer()
+            stopSilenceDetection()
+        }
+        
+        // Score and save current session if not already done
+        if let session = currentSession {
+            let expected = task.expectedTexts[currentTextIndex]
+            let actual = recognizedTextLabel.text ?? ""
+            
+            if session.result == nil {
+                let result = scoringService.compare(expected: expected, actual: actual)
+                session.result = result
+            }
+            session.recognizedText = actual
+            session.endTime = Date()
+            TaskManager.shared.addSession(session, toTaskId: task.id)
+        }
+        
+        // Move to next text
+        currentTextIndex += 1
+        currentSession = nil
+        autoNextWorkItem = nil
+        
+        if currentTextIndex >= task.expectedTexts.count {
+            // All done
+            updateContentForCurrentIndex()
+            showAggregateResults()
+        } else {
+            updateContentForCurrentIndex()
+            scrollView.setContentOffset(.zero, animated: true)
+            
+            // Auto-start recording for the next paragraph
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.autoStartRecordingForNextParagraph()
+            }
+        }
+    }
+    
+    /// Auto-starts recording for the next paragraph when auto-next is enabled.
+    private func autoStartRecordingForNextParagraph() {
+        guard isAutoNextEnabled, !isRecording else { return }
+        
+        AudioSessionManager.shared.requestRecordingPermission { [weak self] granted in
+            guard let self = self, granted else { return }
+            do {
+                if let oldPath = self.currentSession?.audioFilePath {
+                    AudioRecordingManager.deleteAudioFile(at: oldPath)
+                }
+                
+                let audioFilePath = try self.audioRecordingManager.startRecording()
+                
+                self.currentSession = ReadingSession(
+                    expectedTextIndex: self.currentTextIndex,
+                    audioFilePath: audioFilePath
+                )
+                
+                let expectedText = self.task?.expectedTexts[self.currentTextIndex] ?? ""
+                let contextualStrings = Self.extractContextualStrings(from: expectedText)
+                try self.speechService.startRecognition(locale: Locale(identifier: "zh-CN"), contextualStrings: contextualStrings)
+                
+                self.isRecording = true
+                self.startTimer()
+                
+                // Reset and start silence detection for the new paragraph
+                self.lastPartialResultTime = Date()
+                self.lastPartialResultText = ""
+                self.hasAutoAdvancedForCurrentText = false
+                if self.isAutoNextEnabled {
+                    self.startSilenceDetection()
+                }
+                
+                self.recordButton.setTitle("⏹ 停止录音", for: .normal)
+                self.recordButton.backgroundColor = .textSecondary
+                self.pauseButton.isEnabled = true
+                self.pauseButton.alpha = 1.0
+                self.statusLabel.text = "正在录音..."
+                self.statusLabel.textColor = .errorRed
+                self.autoNextIndicator.text = "⏭ 自动下一段已开启"
+                self.autoNextIndicator.textColor = .primary
+            } catch {
+                self.autoNextIndicator.text = "⏭ 自动录音失败，请手动开始"
+                self.autoNextIndicator.textColor = .errorRed
+            }
+        }
     }
 }

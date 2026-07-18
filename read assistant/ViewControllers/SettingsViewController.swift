@@ -8,11 +8,13 @@ final class SettingsViewController: UIViewController {
     private let tableView = UITableView(frame: .zero, style: .grouped)
 
     private enum Section: Int, CaseIterable {
+        case reading
         case general
         case developer
 
         var title: String {
             switch self {
+            case .reading: return "阅读"
             case .general: return "通用"
             case .developer: return "开发者"
             }
@@ -24,6 +26,10 @@ final class SettingsViewController: UIViewController {
         let icon: String
         let accessoryType: UITableViewCell.AccessoryType
         let action: () -> Void
+        /// If non-nil, this item is a toggle. The Bool indicates the current state.
+        var isToggle: Bool = false
+        var toggleValue: Bool = false
+        var toggleChanged: ((Bool) -> Void)? = nil
     }
 
     private var dataSource: [[Item]] = []
@@ -59,6 +65,20 @@ final class SettingsViewController: UIViewController {
 
     private func buildDataSource() {
         dataSource = [
+            // Reading
+            [
+                Item(
+                    title: "自动下一段",
+                    icon: "⏭",
+                    accessoryType: .none,
+                    action: {},
+                    isToggle: true,
+                    toggleValue: UserDefaults.standard.bool(forKey: "auto_next_paragraph_enabled"),
+                    toggleChanged: { [weak self] newValue in
+                        UserDefaults.standard.set(newValue, forKey: "auto_next_paragraph_enabled")
+                    }
+                )
+            ],
             // General
             [
                 Item(title: "关于", icon: "ℹ️", accessoryType: .disclosureIndicator) { [weak self] in
@@ -117,8 +137,33 @@ extension SettingsViewController: UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "SettingsCell", for: indexPath)
         let item = dataSource[indexPath.section][indexPath.row]
+        
+        if item.isToggle {
+            // Toggle cell with UISwitch
+            let cell: UITableViewCell
+            if let reusedCell = tableView.dequeueReusableCell(withIdentifier: "SettingsSwitchCell") {
+                cell = reusedCell
+            } else {
+                cell = UITableViewCell(style: .default, reuseIdentifier: "SettingsSwitchCell")
+            }
+            cell.textLabel?.text = "\(item.icon)  \(item.title)"
+            cell.textLabel?.font = UIFont.systemFont(ofSize: 16)
+            cell.textLabel?.textColor = .textPrimary
+            cell.backgroundColor = .cardBackground
+            cell.selectionStyle = .none
+            
+            let toggle = UISwitch()
+            toggle.isOn = item.toggleValue
+            toggle.onTintColor = .primary
+            toggle.tag = indexPath.section * 100 + indexPath.row
+            toggle.addTarget(self, action: #selector(toggleChanged(_:)), for: .valueChanged)
+            cell.accessoryView = toggle
+            
+            return cell
+        }
+        
+        let cell = tableView.dequeueReusableCell(withIdentifier: "SettingsCell", for: indexPath)
         cell.textLabel?.text = "\(item.icon)  \(item.title)"
         cell.textLabel?.font = UIFont.systemFont(ofSize: 16)
         cell.textLabel?.textColor = .textPrimary
@@ -136,7 +181,17 @@ extension SettingsViewController: UITableViewDataSource {
 extension SettingsViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        dataSource[indexPath.section][indexPath.row].action()
+        let item = dataSource[indexPath.section][indexPath.row]
+        if !item.isToggle {
+            item.action()
+        }
+    }
+    
+    @objc private func toggleChanged(_ sender: UISwitch) {
+        let section = sender.tag / 100
+        let row = sender.tag % 100
+        guard section < dataSource.count, row < dataSource[section].count else { return }
+        dataSource[section][row].toggleChanged?(sender.isOn)
     }
 }
 
