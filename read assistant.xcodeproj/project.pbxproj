@@ -7,19 +7,17 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		767823A6266E604820C35BD0 /* Pods_read_assistant.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E79C81B0D7955B21AD39B485 /* Pods_read_assistant.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		71D670BD8C8713CF7873C1B4 /* Pods-read assistant.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-read assistant.debug.xcconfig"; path = "Target Support Files/Pods-read assistant/Pods-read assistant.debug.xcconfig"; sourceTree = "<group>"; };
-		796F4D00E9630A27D4DA8E8E /* Pods-read assistant.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-read assistant.release.xcconfig"; path = "Target Support Files/Pods-read assistant/Pods-read assistant.release.xcconfig"; sourceTree = "<group>"; };
 		A3AB90B1300A56C90020BF54 /* read assistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "read assistant.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		E79C81B0D7955B21AD39B485 /* Pods_read_assistant.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_read_assistant.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A3AB90B3300A56C90020BF54 /* read assistant */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "read assistant";
 			sourceTree = "<group>";
 		};
@@ -30,7 +28,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				767823A6266E604820C35BD0 /* Pods_read_assistant.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -42,8 +39,6 @@
 			children = (
 				A3AB90B3300A56C90020BF54 /* read assistant */,
 				A3AB90B2300A56C90020BF54 /* Products */,
-				C5B2D34452FB47CBBB949184 /* Pods */,
-				CBAF951A6E030ACBC1D96F86 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -55,23 +50,7 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		C5B2D34452FB47CBBB949184 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				71D670BD8C8713CF7873C1B4 /* Pods-read assistant.debug.xcconfig */,
-				796F4D00E9630A27D4DA8E8E /* Pods-read assistant.release.xcconfig */,
-			);
-			path = Pods;
-			sourceTree = "<group>";
-		};
-		CBAF951A6E030ACBC1D96F86 /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				E79C81B0D7955B21AD39B485 /* Pods_read_assistant.framework */,
-			);
-			name = Frameworks;
-			sourceTree = "<group>";
-		};
+
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -79,11 +58,9 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = A3AB90BC300A56CA0020BF54 /* Build configuration list for PBXNativeTarget "read assistant" */;
 			buildPhases = (
-				AA825A790E6EE4C1302C0E86 /* [CP] Check Pods Manifest.lock */,
 				A3AB90AD300A56C90020BF54 /* Sources */,
 				A3AB90AE300A56C90020BF54 /* Frameworks */,
 				A3AB90AF300A56C90020BF54 /* Resources */,
-				39EE2A7F604AA435006BDFF0 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -142,49 +119,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		39EE2A7F604AA435006BDFF0 /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-read assistant/Pods-read assistant-frameworks-${CONFIGURATION}-input-files.xcfilelist",
-			);
-			inputPaths = (
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-read assistant/Pods-read assistant-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-read assistant/Pods-read assistant-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		AA825A790E6EE4C1302C0E86 /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-read assistant-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -317,7 +251,6 @@
 		};
 		A3AB90BD300A56CA0020BF54 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 71D670BD8C8713CF7873C1B4 /* Pods-read assistant.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -349,7 +282,6 @@
 		};
 		A3AB90BE300A56CA0020BF54 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 796F4D00E9630A27D4DA8E8E /* Pods-read assistant.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

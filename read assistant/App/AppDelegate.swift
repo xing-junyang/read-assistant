@@ -10,6 +10,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
 
+        // Configure Bailian OCR API key.
+        // Replace with your key from https://bailian.console.aliyun.com → API-KEY 管理
+        if BailianOCRService.defaultAPIKey.isEmpty {
+            BailianOCRService.defaultAPIKey = ""  // ← Paste your API key here
+        }
+
         // Initialize window (no UISceneDelegate on iOS 10)
         window = UIWindow(frame: UIScreen.main.bounds)
         window?.backgroundColor = .background

@@ -8,8 +8,9 @@ import CoreImage
 final class OCRScanViewController: UIViewController {
 
     // MARK: - Properties
-    /// Pluggable OCR service
-    var ocrService: OCRServiceProtocol = TesseractOCRService()
+    /// Pluggable OCR service — uses Bailian multimodal model by default.
+    /// Set `ocrService.apiKey` before presenting this view controller.
+    var ocrService: OCRServiceProtocol = BailianOCRService()
     var onTextRecognized: ((String) -> Void)?
 
     // Camera
@@ -61,7 +62,7 @@ final class OCRScanViewController: UIViewController {
     // MARK: - UI Setup
     private func setupUI() {
         view.backgroundColor = .black
-        title = "OCR 拍照识别"
+        title = "拍照识别"
 
         navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
 

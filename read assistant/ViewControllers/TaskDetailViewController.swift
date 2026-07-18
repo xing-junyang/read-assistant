@@ -106,7 +106,7 @@ final class TaskDetailViewController: UIViewController {
     @objc private func addExpectedText() {
         showActionSheet(title: "添加阅读文本", actions: [
             ("手动输入", .default, { [weak self] in self?.showManualInput() }),
-            ("OCR 拍照识别", .default, { [weak self] in self?.showOCRScanner() })
+            ("拍照识别", .default, { [weak self] in self?.showOCRScanner() })
         ])
     }
 
@@ -132,6 +132,13 @@ final class TaskDetailViewController: UIViewController {
 
     private func showOCRScanner() {
         let ocrVC = OCRScanViewController()
+
+        // Configure Bailian API key — replace with your actual key
+        // from https://bailian.console.aliyun.com → API-KEY 管理
+        if let service = ocrVC.ocrService as? BailianOCRService {
+            service.apiKey = BailianOCRService.defaultAPIKey
+        }
+
         ocrVC.onTextRecognized = { [weak self] text in
             guard let self = self, let task = self.task else { return }
             // Auto-parse newlines into separate expected text paragraphs
