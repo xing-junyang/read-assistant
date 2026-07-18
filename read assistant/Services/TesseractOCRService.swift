@@ -4,23 +4,22 @@ import TesseractOCR
 // MARK: - Tesseract OCR Service
 /// OCR implementation using TesseractOCRiOS (CocoaPods).
 ///
-/// Uses G8RecognitionOperation (NSOperation-based) per the library's
-/// recommended pattern. This avoids thread-safety pitfalls and
-/// memory-management issues that arise from manually reusing G8Tesseract
-/// instances across multiple recognitions.
+/// Uses `G8Tesseract` directly instead of `G8RecognitionOperation` so the
+/// engine mode can be set during initialization. Mirrors the exact call
+/// sequence of `G8RecognitionOperation.main`:
+///   1. analyseLayout() — page segmentation + orientation
+///   2. recognize()    — text recognition
+/// Both are required; skipping analyseLayout causes SIGABRT.
+///
+/// ## Image Format
+/// Images are normalized to 32 bpp sRGB via UIGraphicsBeginImageContext.
+/// Leptonica does NOT support 64 bpp (iOS wide gamut / HDR).
 final class TesseractOCRService: OCRServiceProtocol {
 
     // MARK: - Properties
-    var recognitionLanguages: [String] = ["chi_sim"]
+    var recognitionLanguages: [String] = ["eng"]  // 先用 eng 验证 Tesseract 本身是否正常
 
-    /// Maximum pixel dimension for images passed to Tesseract.
-    /// Full camera-resolution photos (4032×3024) are downscaled to avoid
-    /// excessive memory usage that causes EXC_BAD_ACCESS on mobile devices.
-    private static let maxImageDimension: CGFloat = 2048
-
-    /// Serial operation queue for recognition operations.
-    /// Tesseract's underlying C++ engine and global caches are not
-    /// thread-safe, so we process one recognition at a time.
+    /// Serial operation queue. Tesseract's C++ engine is not thread-safe.
     private let operationQueue: OperationQueue = {
         let q = OperationQueue()
         q.maxConcurrentOperationCount = 1
@@ -31,84 +30,115 @@ final class TesseractOCRService: OCRServiceProtocol {
     // MARK: - OCRServiceProtocol
 
     func recognizeText(from image: UIImage, completion: @escaping (Result<String, Error>) -> Void) {
-        // Prep image on calling thread: downscale + stable bitmap copy.
-        guard let prepared = Self.prepareImage(image) else {
-            DispatchQueue.main.async {
-                completion(.failure(OCRServiceError.recognitionFailed("图片数据无效")))
+        // Step 0: Verify traineddata exists before touching C++ API.
+        for lang in recognitionLanguages {
+            guard Self.traineddataExists(for: lang) else {
+                DispatchQueue.main.async {
+                    completion(.failure(OCRServiceError.languageDataNotFound(
+                        "找不到语言包 \(lang).traineddata。")))
+                }
+                return
             }
-            return
         }
 
-        // G8RecognitionOperation creates its own G8Tesseract internally,
-        // avoiding lifetime / cache-corruption issues from manual reuse.
-        // ⚠️ The library does NOT return nil when Tesseract init fails —
-        //    operation.tesseract will be nil instead. We must check for that.
+        // Step 1: Resize if needed (safe UIGraphicsImageRenderer, not CGBitmapContext).
+        let prepared = Self.prepareImageIfNeeded(image)
         let languageString = recognitionLanguages.joined(separator: "+")
-        guard let operation = G8RecognitionOperation(language: languageString),
-              operation.tesseract != nil else {
+
+        // Step 2: Create G8Tesseract with the correct engine mode.
+        //         Using .tesseractOnly because this traineddata is legacy-only.
+        guard let tesseract = G8Tesseract(language: languageString,
+                                          engineMode: .tesseractOnly) else {
             DispatchQueue.main.async {
-                let lang = self.recognitionLanguages.joined(separator: ", ")
                 completion(.failure(OCRServiceError.initializationFailed(
-                    "无法初始化 Tesseract 引擎。请确认 \(lang) 语言包已添加到 Bundle。")))
+                    "无法初始化 Tesseract 引擎。")))
             }
             return
         }
 
-        operation.tesseract.engineMode = .tesseractOnly
-        operation.tesseract.pageSegmentationMode = .auto
-        operation.tesseract.image = prepared
+        tesseract.pageSegmentationMode = .auto
+        tesseract.image = prepared
 
-        // Called on main thread when recognition finishes.
-        operation.recognitionCompleteBlock = { tesseract in
-            let text = tesseract?.recognizedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if text.isEmpty {
-                completion(.failure(OCRServiceError.recognitionFailed("未识别到文字")))
-            } else {
-                completion(.success(text))
+        // Step 3: Run recognition on background queue.
+        //         IMPORTANT: analyseLayout must be called before recognize,
+        //         exactly as G8RecognitionOperation does internally.
+        //         Skipping it causes SIGABRT in the legacy recognition pipeline.
+        operationQueue.addOperation {
+            tesseract.analyseLayout()
+            tesseract.recognize()
+
+            let text = tesseract.recognizedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            DispatchQueue.main.async {
+                if text.isEmpty {
+                    completion(.failure(OCRServiceError.recognitionFailed("未识别到文字")))
+                } else {
+                    completion(.success(text))
+                }
             }
         }
+    }
 
-        operationQueue.addOperation(operation)
+    // MARK: - Traineddata Verification
+    private static func traineddataExists(for language: String) -> Bool {
+        // Check tessdata/ subfolder (folder reference).
+        if let url = Bundle.main.url(forResource: language,
+                                      withExtension: "traineddata",
+                                      subdirectory: "tessdata") {
+            return (try? url.checkResourceIsReachable()) ?? false
+        }
+        // Check bundle root (individual file).
+        if let url = Bundle.main.url(forResource: language,
+                                      withExtension: "traineddata") {
+            return (try? url.checkResourceIsReachable()) ?? false
+        }
+        return false
     }
 
     // MARK: - Image Preparation
-    /// Downscales (if needed) and creates a self-contained grayscale bitmap
-    /// copy of the image. Using 8-bit gray avoids alpha-channel ambiguities
-    /// in G8Tesseract.pixForImage:.
-    private static func prepareImage(_ image: UIImage) -> UIImage? {
-        guard let cgImage = image.cgImage else { return nil }
+    /// Resizes and converts the image to 32 bpp sRGB — the only format Tesseract
+    /// reliably accepts. Leptonica crashes on 64 bpp images (iOS 14+ wide gamut).
+    private static let maxImageDimension: CGFloat = 2048
 
-        let origWidth = CGFloat(cgImage.width)
-        let origHeight = CGFloat(cgImage.height)
+    private static func prepareImageIfNeeded(_ image: UIImage) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
 
         let scale: CGFloat
-        if origWidth > maxImageDimension || origHeight > maxImageDimension {
-            scale = min(maxImageDimension / origWidth, maxImageDimension / origHeight)
+        if width > maxImageDimension || height > maxImageDimension {
+            scale = min(maxImageDimension / width, maxImageDimension / height)
         } else {
             scale = 1.0
         }
+        let newSize = CGSize(width: width * scale, height: height * scale)
 
-        let targetWidth = Int(origWidth * scale)
-        let targetHeight = Int(origHeight * scale)
+        // UIGraphicsBeginImageContextWithOptions ALWAYS creates a
+        // standard ARGB8888 (32 bpp) context, compatible with Leptonica.
+        // Never use UIGraphicsImageRenderer here — it can produce 64 bpp.
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        defer { UIGraphicsEndImageContext() }
+        guard let ctx = UIGraphicsGetCurrentContext() else { return image }
 
-        // Create an 8-bit grayscale context (no alpha).
-        // This avoids the complex 32-bit byte-swizzling in pixForImage:,
-        // going through the simple 8-bit copy path instead.
-        let colorSpace = CGColorSpaceCreateDeviceGray()
-        guard let context = CGContext(
-            data: nil,
-            width: targetWidth,
-            height: targetHeight,
-            bitsPerComponent: 8,
-            bytesPerRow: targetWidth,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else { return nil }
+        // Fill white background for non-opaque images.
+        ctx.setFillColor(UIColor.white.cgColor)
+        ctx.fill(CGRect(origin: .zero, size: newSize))
 
-        context.interpolationQuality = .high
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+        image.draw(in: CGRect(origin: .zero, size: newSize))
 
-        guard let outputCGImage = context.makeImage() else { return nil }
-        return UIImage(cgImage: outputCGImage)
+        guard let result = UIGraphicsGetImageFromCurrentImageContext() else {
+            return image
+        }
+
+        // Sanity check: log bpp for debugging.
+        if let cg = result.cgImage {
+            let bpp = cg.bitsPerPixel
+            if bpp != 32 && bpp != 24 {
+                NSLog("[TesseractOCRService] ⚠️ Image bpp = \(bpp), expected 32. Recognition may fail.")
+            }
+        }
+
+        return result
     }
 }
