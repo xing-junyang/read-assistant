@@ -10,27 +10,40 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
 
-        // Configure Bailian OCR API key.
-        // Replace with your key from https://bailian.console.aliyun.com → API-KEY 管理
-        if BailianOCRService.defaultAPIKey.isEmpty {
-            BailianOCRService.defaultAPIKey = ""  // ← Paste your API key here
-        }
-
         // Initialize window (no UISceneDelegate on iOS 10)
         window = UIWindow(frame: UIScreen.main.bounds)
         window?.backgroundColor = .background
 
-        // Initialize root view controller
+        // --- Tab 1: Home (Task List) ---
         let taskListVC = TaskListViewController()
-        let navigationController = UINavigationController(rootViewController: taskListVC)
-        navigationController.navigationBar.barTintColor = .cardBackground
-        navigationController.navigationBar.tintColor = .primary
-        navigationController.navigationBar.titleTextAttributes = [
+        let homeNav = UINavigationController(rootViewController: taskListVC)
+        homeNav.navigationBar.barTintColor = .cardBackground
+        homeNav.navigationBar.tintColor = .primary
+        homeNav.navigationBar.titleTextAttributes = [
             NSAttributedString.Key.foregroundColor: UIColor.textPrimary
         ]
-        navigationController.navigationBar.isTranslucent = false
+        homeNav.navigationBar.isTranslucent = false
+        homeNav.tabBarItem = UITabBarItem(title: "首页", image: nil, tag: 0)
 
-        window?.rootViewController = navigationController
+        // --- Tab 2: Settings ---
+        let settingsVC = SettingsViewController()
+        let settingsNav = UINavigationController(rootViewController: settingsVC)
+        settingsNav.navigationBar.barTintColor = .cardBackground
+        settingsNav.navigationBar.tintColor = .primary
+        settingsNav.navigationBar.titleTextAttributes = [
+            NSAttributedString.Key.foregroundColor: UIColor.textPrimary
+        ]
+        settingsNav.navigationBar.isTranslucent = false
+        settingsNav.tabBarItem = UITabBarItem(title: "设置", image: nil, tag: 1)
+
+        // --- Tab Bar Controller ---
+        let tabBarController = UITabBarController()
+        tabBarController.viewControllers = [homeNav, settingsNav]
+        tabBarController.tabBar.barTintColor = .cardBackground
+        tabBarController.tabBar.tintColor = .primary
+        tabBarController.tabBar.isTranslucent = false
+
+        window?.rootViewController = tabBarController
         window?.makeKeyAndVisible()
 
         return true

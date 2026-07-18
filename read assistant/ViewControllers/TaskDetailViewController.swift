@@ -183,11 +183,8 @@ final class TaskDetailViewController: UIViewController {
     private func showOCRScanner() {
         let ocrVC = OCRScanViewController()
 
-        // Configure Bailian API key — replace with your actual key
-        // from https://bailian.console.aliyun.com → API-KEY 管理
-        if let service = ocrVC.ocrService as? BailianOCRService {
-            service.apiKey = BailianOCRService.defaultAPIKey
-        }
+        // API key is now configured via DeveloperSettingsManager at init time.
+        // No need to override here — BailianOCRService.init() picks up the effective key automatically.
 
         ocrVC.onTextRecognized = { [weak self] text in
             guard let self = self, let task = self.task else { return }

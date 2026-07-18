@@ -54,12 +54,12 @@ final class BailianOCRService: OCRServiceProtocol {
     // MARK: - Init
 
     /// - Parameters:
-    ///   - apiKey: Bailian API key. Defaults to empty; set before use.
-    ///   - model: Model name. Defaults to `qwen-vl-plus`.
-    ///   - baseURL: API base URL. Defaults to DashScope compatible-mode endpoint.
-    init(apiKey: String = BailianOCRService.defaultAPIKey,
-         model: String = "qwen3-vl-plus",
-         baseURL: String = "https://dashscope.aliyuncs.com/compatible-mode/v1") {
+    ///   - apiKey: Bailian API key. Defaults to the developer-overridden value, or the hardcoded default.
+    ///   - model: Model name. Defaults to the developer-overridden value, or `qwen3-vl-plus`.
+    ///   - baseURL: API base URL. Defaults to the developer-overridden value, or DashScope compatible-mode endpoint.
+    init(apiKey: String = DeveloperSettingsManager.shared.effectiveAPIKey,
+         model: String = DeveloperSettingsManager.shared.effectiveModel,
+         baseURL: String = DeveloperSettingsManager.shared.effectiveBaseURL) {
         self.apiKey = apiKey
         self.model = model
         self.baseURL = baseURL
