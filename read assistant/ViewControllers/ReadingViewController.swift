@@ -15,6 +15,7 @@ final class ReadingViewController: UIViewController {
     // Pluggable services
     private let speechService: SpeechRecognitionServiceProtocol = AppleSpeechRecognitionService()
     private let scoringService: ScoringServiceProtocol = DiffScoringService()
+    private let audioRecordingManager = AudioRecordingManager.shared
 
     // State
     private var currentTextIndex = 0
@@ -67,6 +68,10 @@ final class ReadingViewController: UIViewController {
         super.viewWillDisappear(animated)
         if isRecording {
             stopRecording()
+        }
+        // Ensure audio recording manager is fully stopped
+        if audioRecordingManager.isRecording {
+            audioRecordingManager.stopRecording(keepFile: false)
         }
     }
 
@@ -276,8 +281,20 @@ final class ReadingViewController: UIViewController {
             guard let self = self else { return }
             if granted {
                 do {
-                    // Create a new session
-                    self.currentSession = ReadingSession(expectedTextIndex: self.currentTextIndex)
+                    // Delete old audio file if re-recording
+                    if let oldPath = self.currentSession?.audioFilePath {
+                        AudioRecordingManager.deleteAudioFile(at: oldPath)
+                    }
+
+                    // Start audio file recording first (before speech recognition,
+                    // since speech recognition also needs the audio session)
+                    let audioFilePath = try self.audioRecordingManager.startRecording()
+
+                    // Create a new session with the audio file path
+                    self.currentSession = ReadingSession(
+                        expectedTextIndex: self.currentTextIndex,
+                        audioFilePath: audioFilePath
+                    )
 
                     // Provide expected text as context to improve recognition accuracy
                     let expectedText = self.task?.expectedTexts[self.currentTextIndex] ?? ""
@@ -303,6 +320,7 @@ final class ReadingViewController: UIViewController {
 
     private func stopRecording() {
         speechService.stopRecognition()
+        audioRecordingManager.stopRecording(keepFile: true)
         isRecording = false
         stopTimer()
 
@@ -323,6 +341,7 @@ final class ReadingViewController: UIViewController {
     @objc private func pauseButtonTapped() {
         if speechService.isRecognizing {
             speechService.pauseRecognition()
+            audioRecordingManager.pauseRecording()
             pauseButton.setTitle("▶ 继续", for: .normal)
             statusLabel.text = "已暂停"
             statusLabel.textColor = .warningOrange
@@ -330,6 +349,7 @@ final class ReadingViewController: UIViewController {
         } else {
             do {
                 try speechService.resumeRecognition()
+                audioRecordingManager.resumeRecording()
                 pauseButton.setTitle("⏸ 暂停", for: .normal)
                 statusLabel.text = "正在录音..."
                 statusLabel.textColor = .errorRed
@@ -408,6 +428,10 @@ final class ReadingViewController: UIViewController {
         let alert = UIAlertController(title: "阅读完成", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "重新阅读", style: .default) { [weak self] _ in
             guard let self = self else { return }
+            // Clean up any dangling audio before resetting
+            if self.audioRecordingManager.isRecording {
+                self.audioRecordingManager.stopRecording(keepFile: false)
+            }
             self.currentTextIndex = 0
             self.currentSession = nil
             self.updateContentForCurrentIndex()

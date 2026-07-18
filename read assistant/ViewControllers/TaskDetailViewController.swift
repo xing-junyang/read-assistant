@@ -1,4 +1,5 @@
 import UIKit
+import AVFoundation
 
 // MARK: - Task Detail View Controller
 /// Shows task details, expected texts, and allows starting a reading session.
@@ -12,6 +13,10 @@ final class TaskDetailViewController: UIViewController {
 
     private let tableView = UITableView(frame: .zero, style: .grouped)
     private let startReadingButton = UIButton(type: .system)
+
+    // Audio playback
+    private var audioPlayer: AVAudioPlayer?
+    private var currentlyPlayingSessionId: String?
 
     // MARK: - Initialization
     init(taskId: String) {
@@ -99,6 +104,51 @@ final class TaskDetailViewController: UIViewController {
             startReadingButton.setTitle("暂无文本", for: .normal)
             startReadingButton.backgroundColor = .textSecondary
         }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        stopPlayback()
+    }
+
+    // MARK: - Audio Playback
+
+    @objc private func playButtonTapped(_ sender: UIButton) {
+        guard let task = task, sender.tag < task.sessions.count else { return }
+        let session = task.sessions[sender.tag]
+
+        // If already playing this session, stop
+        if currentlyPlayingSessionId == session.id {
+            stopPlayback()
+            return
+        }
+
+        // Stop any existing playback
+        stopPlayback()
+
+        // Start playback
+        guard let audioPath = session.audioFilePath,
+              AudioRecordingManager.audioFileExists(at: audioPath) else { return }
+
+        do {
+            try AudioSessionManager.shared.configureForPlayback()
+            let url = URL(fileURLWithPath: audioPath)
+            audioPlayer = try AVAudioPlayer(contentsOf: url)
+            audioPlayer?.delegate = self
+            audioPlayer?.play()
+            currentlyPlayingSessionId = session.id
+            tableView.reloadData()
+        } catch {
+            showAlert(title: "播放失败", message: error.localizedDescription)
+        }
+    }
+
+    private func stopPlayback() {
+        audioPlayer?.stop()
+        audioPlayer = nil
+        currentlyPlayingSessionId = nil
+        try? AudioSessionManager.shared.deactivate()
+        tableView.reloadData()
     }
 
     // MARK: - Actions
@@ -408,12 +458,38 @@ extension TaskDetailViewController: UITableViewDataSource {
             cell.textLabel?.numberOfLines = 1
             cell.textLabel?.textColor = .textPrimary
 
+            // Build subtitle: score + playback indicator
+            var subtitleParts: [String] = []
             if let result = session.result {
-                cell.detailTextLabel?.text = "得分: \(Int(result.score))%"
-                cell.detailTextLabel?.textColor = result.score >= 80 ? .successGreen : .errorRed
+                subtitleParts.append("得分: \(Int(result.score))%")
+            }
+            let isPlaying = (currentlyPlayingSessionId == session.id)
+            let hasAudio = session.audioFilePath != nil && AudioRecordingManager.audioFileExists(at: session.audioFilePath!)
+            if isPlaying {
+                subtitleParts.append("🔊 正在播放...")
+            } else if hasAudio {
+                subtitleParts.append("🎵 有录音")
+            }
+            cell.detailTextLabel?.text = subtitleParts.joined(separator: " | ")
+            if let result = session.result {
+                cell.detailTextLabel?.textColor = result.score >= 80 ? .successGreen : .textSecondary
+            } else {
+                cell.detailTextLabel?.textColor = .textSecondary
             }
 
-            cell.accessoryType = .disclosureIndicator
+            // Accessory: play button if audio available, else disclosure indicator
+            if hasAudio {
+                let playButton = UIButton(type: .system)
+                playButton.setTitle(isPlaying ? "⏹" : "▶", for: .normal)
+                playButton.titleLabel?.font = UIFont.systemFont(ofSize: 18)
+                playButton.tag = indexPath.row
+                playButton.addTarget(self, action: #selector(playButtonTapped(_:)), for: .touchUpInside)
+                playButton.sizeToFit()
+                cell.accessoryView = playButton
+            } else {
+                cell.accessoryView = nil
+                cell.accessoryType = session.result != nil ? .disclosureIndicator : .none
+            }
             return cell
 
         default:
@@ -483,7 +559,7 @@ extension TaskDetailViewController: UITableViewDelegate {
             let nav = UINavigationController(rootViewController: inputVC)
             present(nav, animated: true)
         case 2:
-            // View result
+            // View result (playback is handled by the play button)
             let session = task.sessions[indexPath.row]
             if let result = session.result {
                 let resultVC = ResultViewController(result: result)
@@ -495,31 +571,62 @@ extension TaskDetailViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        return indexPath.section == 1 && !(task?.expectedTexts.isEmpty ?? true)
+        if indexPath.section == 1 {
+            return !(task?.expectedTexts.isEmpty ?? true)
+        }
+        if indexPath.section == 2 {
+            return true // Allow deleting history sessions
+        }
+        return false
     }
 
     func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
-        if editingStyle == .delete, indexPath.section == 1 {
+        if editingStyle == .delete {
             guard let task = task else { return }
-            task.expectedTexts.remove(at: indexPath.row)
-            TaskManager.shared.updateTask(task)
-            tableView.reloadData()
-            updateStartButton()
+            if indexPath.section == 1 {
+                task.expectedTexts.remove(at: indexPath.row)
+                TaskManager.shared.updateTask(task)
+                tableView.reloadData()
+                updateStartButton()
+            } else if indexPath.section == 2 {
+                let session = task.sessions[indexPath.row]
+                // Stop playback if deleting the currently playing session
+                if currentlyPlayingSessionId == session.id {
+                    stopPlayback()
+                }
+                TaskManager.shared.removeSession(session, fromTaskId: task.id)
+                tableView.reloadData()
+            }
         }
     }
 
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath) -> [UITableViewRowAction]? {
-        guard indexPath.section == 1 else { return nil }
-
-        let deleteAction = UITableViewRowAction(style: .destructive, title: "删除") { [weak self] _, _ in
-            guard let self = self, let task = self.task else { return }
-            task.expectedTexts.remove(at: indexPath.row)
-            TaskManager.shared.updateTask(task)
-            self.tableView.reloadData()
-            self.updateStartButton()
+        if indexPath.section == 1 {
+            let deleteAction = UITableViewRowAction(style: .destructive, title: "删除") { [weak self] _, _ in
+                guard let self = self, let task = self.task else { return }
+                task.expectedTexts.remove(at: indexPath.row)
+                TaskManager.shared.updateTask(task)
+                self.tableView.reloadData()
+                self.updateStartButton()
+            }
+            return [deleteAction]
         }
 
-        return [deleteAction]
+        if indexPath.section == 2 {
+            let deleteAction = UITableViewRowAction(style: .destructive, title: "删除") { [weak self] _, _ in
+                guard let self = self, let task = self.task else { return }
+                let session = task.sessions[indexPath.row]
+                // Stop playback if deleting the currently playing session
+                if self.currentlyPlayingSessionId == session.id {
+                    self.stopPlayback()
+                }
+                TaskManager.shared.removeSession(session, fromTaskId: task.id)
+                self.tableView.reloadData()
+            }
+            return [deleteAction]
+        }
+
+        return nil
     }
 }
 
@@ -584,5 +691,19 @@ final class TextInputViewController: UIViewController {
         }
         onSave?(text)
         dismiss(animated: true)
+    }
+}
+
+// MARK: - AVAudioPlayerDelegate
+extension TaskDetailViewController: AVAudioPlayerDelegate {
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        stopPlayback()
+    }
+
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        if let error = error {
+            print("[TaskDetailVC] Audio decode error: \(error.localizedDescription)")
+        }
+        stopPlayback()
     }
 }

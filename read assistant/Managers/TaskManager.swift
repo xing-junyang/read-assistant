@@ -29,17 +29,35 @@ final class TaskManager {
         saveTasks()
     }
 
-    /// Removes a task by ID.
+    /// Removes a task by ID, cleaning up all associated audio files.
     func removeTask(withId id: String) {
+        // Clean up audio files for all sessions
+        if let task = tasks.first(where: { $0.id == id }) {
+            for session in task.sessions {
+                if let audioPath = session.audioFilePath {
+                    AudioRecordingManager.deleteAudioFile(at: audioPath)
+                }
+            }
+        }
         tasks.removeAll { $0.id == id }
         saveTasks()
     }
 
-    /// Removes tasks at given indices.
+    /// Removes tasks at given indices, cleaning up audio files.
     func removeTasks(at indices: [Int]) {
         let ids = indices.compactMap { index -> String? in
             guard index < tasks.count else { return nil }
             return tasks[index].id
+        }
+        // Clean up audio files for all sessions in removed tasks
+        for id in ids {
+            if let task = tasks.first(where: { $0.id == id }) {
+                for session in task.sessions {
+                    if let audioPath = session.audioFilePath {
+                        AudioRecordingManager.deleteAudioFile(at: audioPath)
+                    }
+                }
+            }
         }
         tasks.removeAll { ids.contains($0.id) }
         saveTasks()
@@ -90,6 +108,39 @@ final class TaskManager {
     func addSession(_ session: ReadingSession, toTaskId taskId: String) {
         guard let task = tasks.first(where: { $0.id == taskId }) else { return }
         task.sessions.append(session)
+        task.modifiedAt = Date()
+        saveTasks()
+    }
+
+    /// Removes a reading session from a task and deletes its associated audio file.
+    func removeSession(_ session: ReadingSession, fromTaskId taskId: String) {
+        guard let task = tasks.first(where: { $0.id == taskId }) else { return }
+
+        // Delete the audio file if it exists
+        if let audioPath = session.audioFilePath {
+            AudioRecordingManager.deleteAudioFile(at: audioPath)
+        }
+
+        task.sessions.removeAll { $0.id == session.id }
+        task.modifiedAt = Date()
+        saveTasks()
+    }
+
+    /// Removes sessions at given indices from a task, cleaning up audio files.
+    func removeSessions(at indices: [Int], fromTaskId taskId: String) {
+        guard let task = tasks.first(where: { $0.id == taskId }) else { return }
+        let sortedIndices = indices.sorted(by: >)
+        for index in sortedIndices {
+            guard index < task.sessions.count else { continue }
+            let session = task.sessions[index]
+
+            // Delete the audio file if it exists
+            if let audioPath = session.audioFilePath {
+                AudioRecordingManager.deleteAudioFile(at: audioPath)
+            }
+
+            task.sessions.remove(at: index)
+        }
         task.modifiedAt = Date()
         saveTasks()
     }
