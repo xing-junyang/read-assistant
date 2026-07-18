@@ -15,6 +15,10 @@ final class AppleSpeechRecognitionService: NSObject, SpeechRecognitionServicePro
     private var accumulatedText = ""
     private var isPaused = false
 
+    // Audio file writing (simultaneous recording)
+    private var audioFileWriter: AVAudioFile?
+    private(set) var audioOutputURL: URL?
+
     weak var delegate: SpeechRecognitionServiceDelegate?
 
     var isRecognizing: Bool {
@@ -35,7 +39,7 @@ final class AppleSpeechRecognitionService: NSObject, SpeechRecognitionServicePro
 
     // MARK: - SpeechRecognitionServiceProtocol
 
-    func startRecognition(locale: Locale, contextualStrings: [String] = []) throws {
+    func startRecognition(locale: Locale, contextualStrings: [String] = [], audioOutputURL: URL? = nil) throws {
         guard !isRecognizing else {
             throw SpeechRecognitionError.recognitionInProgress
         }
@@ -47,6 +51,7 @@ final class AppleSpeechRecognitionService: NSObject, SpeechRecognitionServicePro
         // Reset state
         accumulatedText = ""
         isPaused = false
+        self.audioOutputURL = audioOutputURL
 
         // Configure audio session
         try AudioSessionManager.shared.configureForRecording()
@@ -76,8 +81,30 @@ final class AppleSpeechRecognitionService: NSObject, SpeechRecognitionServicePro
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
+        // Set up audio file writer if an output URL is provided (for simultaneous recording)
+        if let outputURL = audioOutputURL {
+            // Delete any existing file at the path
+            try? FileManager.default.removeItem(at: outputURL)
+            // Create AVAudioFile using the same format as the engine's tap, ensuring
+            // buffer writes always succeed without format conversion.
+            audioFileWriter = try AVAudioFile(
+                forWriting: outputURL,
+                settings: recordingFormat.settings,
+                commonFormat: recordingFormat.commonFormat,
+                interleaved: recordingFormat.isInterleaved
+            )
+        } else {
+            audioFileWriter = nil
+        }
+
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             self?.recognitionRequest?.append(buffer)
+
+            // Write audio buffer to file for simultaneous recording.
+            // Buffer format matches writer format since both use recordingFormat.
+            if let writer = self?.audioFileWriter {
+                try? writer.write(from: buffer)
+            }
         }
 
         // Start audio engine
@@ -85,6 +112,12 @@ final class AppleSpeechRecognitionService: NSObject, SpeechRecognitionServicePro
         do {
             try audioEngine.start()
         } catch {
+            // Clean up file writer on failure
+            audioFileWriter = nil
+            if let url = audioOutputURL {
+                try? FileManager.default.removeItem(at: url)
+                self.audioOutputURL = nil
+            }
             throw SpeechRecognitionError.audioEngineError(error.localizedDescription)
         }
 
@@ -143,6 +176,15 @@ final class AppleSpeechRecognitionService: NSObject, SpeechRecognitionServicePro
 
         // Stop audio engine
         audioEngine.stop()
+
+        // Close and finalize the audio file writer (flushes remaining data to disk)
+        if let writer = audioFileWriter {
+            // Force-sync the file length to match the actual data written
+            // AVAudioFile.length may not be accurate during writing, so we
+            // need to close it properly. Calling `audioFileWriter = nil` is
+            // sufficient to release and close the file.
+            audioFileWriter = nil
+        }
 
         // Deactivate audio session
         try? AudioSessionManager.shared.deactivate()

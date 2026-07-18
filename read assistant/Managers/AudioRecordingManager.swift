@@ -110,7 +110,11 @@ final class AudioRecordingManager: NSObject {
 
     // MARK: - File Path Generation
 
-    private func generateAudioFilePath() -> String {
+    /// Generates a unique audio file path in the AudioRecordings directory.
+    /// Uses .caf (Core Audio Format) which is the native format for audio recorded
+    /// via AVAudioEngine tap buffers (linear PCM). This format is lossless and
+    /// avoids the transcoding issues that can occur with compressed formats like AAC.
+    static func generateAudioFilePath() -> String {
         let docsDir = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
         let audioDir = URL(fileURLWithPath: docsDir).appendingPathComponent("AudioRecordings").path
 
@@ -119,8 +123,12 @@ final class AudioRecordingManager: NSObject {
             try? FileManager.default.createDirectory(atPath: audioDir, withIntermediateDirectories: true)
         }
 
-        let fileName = "recording_\(UUID().uuidString).m4a"
+        let fileName = "recording_\(UUID().uuidString).caf"
         return URL(fileURLWithPath: audioDir).appendingPathComponent(fileName).path
+    }
+
+    private func generateAudioFilePath() -> String {
+        return Self.generateAudioFilePath()
     }
 
     // MARK: - Interruption Handling

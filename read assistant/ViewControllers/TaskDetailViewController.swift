@@ -14,9 +14,10 @@ final class TaskDetailViewController: UIViewController {
     private let tableView = UITableView(frame: .zero, style: .grouped)
     private let startReadingButton = UIButton(type: .system)
 
-    // Audio playback
-    private var audioPlayer: AVAudioPlayer?
+    // Audio playback bar
+    private let playbackBar = PlaybackBarView()
     private var currentlyPlayingSessionId: String?
+    private var playbackBarBottomConstraint: NSLayoutConstraint?
 
     // MARK: - Initialization
     init(taskId: String) {
@@ -34,6 +35,7 @@ final class TaskDetailViewController: UIViewController {
         setupUI()
         setupTableView()
         setupStartButton()
+        setupPlaybackBar()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -74,6 +76,23 @@ final class TaskDetailViewController: UIViewController {
         ])
     }
 
+    private func setupPlaybackBar() {
+        playbackBar.delegate = self
+        playbackBar.isHidden = true
+        playbackBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(playbackBar)
+
+        let bottomConstraint = playbackBar.bottomAnchor.constraint(equalTo: startReadingButton.topAnchor, constant: -8)
+        playbackBarBottomConstraint = bottomConstraint
+
+        NSLayoutConstraint.activate([
+            playbackBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            playbackBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            playbackBar.heightAnchor.constraint(equalToConstant: 64),
+            bottomConstraint
+        ])
+    }
+
     private func setupStartButton() {
         startReadingButton.setTitle("开始阅读", for: .normal)
         startReadingButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
@@ -109,35 +128,27 @@ final class TaskDetailViewController: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        stopPlayback()
+        playbackBar.stopPlayback()
+        currentlyPlayingSessionId = nil
+        playbackBar.isHidden = true
     }
 
     // MARK: - Audio Playback
 
-    @objc private func playButtonTapped(_ sender: UIButton) {
-        guard let task = task, sender.tag < task.sessions.count else { return }
-        let session = task.sessions[sender.tag]
-
-        // If already playing this session, stop
-        if currentlyPlayingSessionId == session.id {
-            stopPlayback()
+    /// Shows the playback bar and starts playing the audio for a session.
+    private func startPlayback(for session: ReadingSession) {
+        guard let audioPath = session.audioFilePath,
+              AudioRecordingManager.audioFileExists(at: audioPath) else {
+            showAlert(title: "无法播放", message: "录音文件不存在")
             return
         }
 
-        // Stop any existing playback
-        stopPlayback()
-
-        // Start playback
-        guard let audioPath = session.audioFilePath,
-              AudioRecordingManager.audioFileExists(at: audioPath) else { return }
-
         do {
-            try AudioSessionManager.shared.configureForPlayback()
             let url = URL(fileURLWithPath: audioPath)
-            audioPlayer = try AVAudioPlayer(contentsOf: url)
-            audioPlayer?.delegate = self
-            audioPlayer?.play()
+            try playbackBar.loadAudio(url: url)
+            playbackBar.play()
             currentlyPlayingSessionId = session.id
+            showPlaybackBar()
             tableView.reloadData()
         } catch {
             showAlert(title: "播放失败", message: error.localizedDescription)
@@ -145,11 +156,51 @@ final class TaskDetailViewController: UIViewController {
     }
 
     private func stopPlayback() {
-        audioPlayer?.stop()
-        audioPlayer = nil
+        playbackBar.stopPlayback()
         currentlyPlayingSessionId = nil
-        try? AudioSessionManager.shared.deactivate()
+        hidePlaybackBar()
         tableView.reloadData()
+    }
+
+    private func showPlaybackBar() {
+        playbackBar.isHidden = false
+        playbackBar.alpha = 0
+        UIView.animate(withDuration: 0.25) {
+            self.playbackBar.alpha = 1.0
+            // Adjust table view bottom inset so content isn't hidden behind playback bar
+            self.tableView.contentInset.bottom = 72
+        }
+    }
+
+    private func hidePlaybackBar() {
+        UIView.animate(withDuration: 0.25, animations: {
+            self.playbackBar.alpha = 0
+            self.tableView.contentInset.bottom = 0
+        }) { _ in
+            if self.currentlyPlayingSessionId == nil {
+                self.playbackBar.isHidden = true
+            }
+        }
+    }
+
+    @objc private func playButtonTapped(_ sender: UIButton) {
+        guard let task = task, sender.tag < task.sessions.count else { return }
+        let session = task.sessions[sender.tag]
+
+        // If already playing this session, toggle play/pause
+        if currentlyPlayingSessionId == session.id {
+            if playbackBar.isPlaying {
+                playbackBar.pause()
+            } else {
+                playbackBar.play()
+            }
+            tableView.reloadData()
+            return
+        }
+
+        // Stop any existing playback and start new one
+        stopPlayback()
+        startPlayback(for: session)
     }
 
     // MARK: - Actions
@@ -467,7 +518,8 @@ extension TaskDetailViewController: UITableViewDataSource {
             if let result = session.result {
                 subtitleParts.append("得分: \(Int(result.score))%")
             }
-            let isPlaying = (currentlyPlayingSessionId == session.id)
+            let isCurrentSession = (currentlyPlayingSessionId == session.id)
+            let isPlaying = isCurrentSession && playbackBar.isPlaying
             let hasAudio = session.audioFilePath != nil && AudioRecordingManager.audioFileExists(at: session.audioFilePath!)
             if isPlaying {
                 subtitleParts.append("🔊 正在播放...")
@@ -481,10 +533,10 @@ extension TaskDetailViewController: UITableViewDataSource {
                 cell.detailTextLabel?.textColor = .textSecondary
             }
 
-            // Accessory: play button if audio available, else disclosure indicator
+            // Accessory: play/pause button if audio available, else disclosure indicator
             if hasAudio {
                 let playButton = UIButton(type: .system)
-                playButton.setTitle(isPlaying ? "⏹" : "▶", for: .normal)
+                playButton.setTitle(isPlaying ? "⏸" : "▶", for: .normal)
                 playButton.titleLabel?.font = UIFont.systemFont(ofSize: 18)
                 playButton.tag = indexPath.row
                 playButton.addTarget(self, action: #selector(playButtonTapped(_:)), for: .touchUpInside)
@@ -631,6 +683,19 @@ extension TaskDetailViewController: UITableViewDelegate {
         }
 
         return nil
+    }
+}
+
+// MARK: - PlaybackBarViewDelegate
+extension TaskDetailViewController: PlaybackBarViewDelegate {
+    func playbackBarViewDidFinishPlaying(_ view: PlaybackBarView) {
+        // Playback completed — keep the bar visible but update cell buttons
+        tableView.reloadData()
+    }
+
+    func playbackBarView(_ view: PlaybackBarView, didEncounterError error: Error) {
+        showAlert(title: "播放错误", message: error.localizedDescription)
+        stopPlayback()
     }
 }
 

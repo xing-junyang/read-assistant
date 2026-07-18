@@ -16,8 +16,10 @@ protocol SpeechRecognitionServiceProtocol: AnyObject {
     ///   - locale: The locale for recognition (e.g., "zh-CN").
     ///   - contextualStrings: Optional array of words/phrases the recognizer should favor.
     ///     Providing expected text as context can significantly improve accuracy.
+    ///   - audioOutputURL: Optional URL to save recorded audio to a file simultaneously.
+    ///     When provided, the raw microphone audio will be written to this file for later playback.
     /// - Throws: Error if microphone access is denied or recognizer is unavailable.
-    func startRecognition(locale: Locale, contextualStrings: [String]) throws
+    func startRecognition(locale: Locale, contextualStrings: [String], audioOutputURL: URL?) throws
 
     /// Pauses ongoing recognition (keeps session alive).
     func pauseRecognition()
