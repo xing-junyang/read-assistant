@@ -16,9 +16,9 @@ final class DeveloperSettingsViewController: UIViewController {
 
         var title: String {
             switch self {
-            case .apiKey: return "API Key"
-            case .model: return "模型 (Model)"
-            case .baseURL: return "Base URL"
+            case .apiKey: return "API 密钥"
+            case .model: return "模型"
+            case .baseURL: return "基础 URL"
             }
         }
 

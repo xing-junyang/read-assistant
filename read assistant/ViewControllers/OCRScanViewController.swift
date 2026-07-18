@@ -64,7 +64,7 @@ final class OCRScanViewController: UIViewController {
         view.backgroundColor = .black
         title = "拍照识别"
 
-        navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
+        navigationItem.leftBarButtonItem = UIBarButtonItem(title: "取消", style: .plain, target: self, action: #selector(cancelTapped))
 
         // Image view (for captured photo)
         imageView.contentMode = .scaleAspectFit

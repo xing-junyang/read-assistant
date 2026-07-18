@@ -48,7 +48,8 @@ final class TaskDetailViewController: UIViewController {
         title = task?.title ?? "任务详情"
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .add,
+            title: "添加阅读文段",
+            style: .plain,
             target: self,
             action: #selector(addExpectedText)
         )
@@ -649,8 +650,8 @@ final class TextInputViewController: UIViewController {
         view.backgroundColor = .background
         title = initialText.isEmpty ? "输入文本" : "编辑文本"
 
-        navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
-        navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .save, target: self, action: #selector(saveTapped))
+        navigationItem.leftBarButtonItem = UIBarButtonItem(title: "取消", style: .plain, target: self, action: #selector(cancelTapped))
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "保存", style: .plain, target: self, action: #selector(saveTapped))
 
         textView.font = UIFont.systemFont(ofSize: 16)
         textView.text = initialText

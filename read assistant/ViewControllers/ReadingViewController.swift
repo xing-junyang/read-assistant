@@ -60,7 +60,7 @@ final class ReadingViewController: UIViewController {
     }
 
     private func setupNavigationBar() {
-        let editButton = UIBarButtonItem(barButtonSystemItem: .edit, target: self, action: #selector(editExpectedTextTapped))
+        let editButton = UIBarButtonItem(title: "编辑", style: .plain, target: self, action: #selector(editExpectedTextTapped))
         navigationItem.rightBarButtonItem = editButton
     }
 

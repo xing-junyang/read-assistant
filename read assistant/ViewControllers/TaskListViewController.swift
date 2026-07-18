@@ -68,11 +68,11 @@ final class TaskListViewController: UIViewController {
 
     private func setupNavigationBar() {
         // Add button
-        let addButton = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addTaskTapped))
+        let addButton = UIBarButtonItem(title: "添加", style: .plain, target: self, action: #selector(addTaskTapped))
         navigationItem.rightBarButtonItem = addButton
 
         // Edit button
-        navigationItem.leftBarButtonItem = editButtonItem
+        navigationItem.leftBarButtonItem = UIBarButtonItem(title: "编辑", style: .plain, target: self, action: #selector(toggleEdit))
     }
 
     private func setupTableView() {
@@ -111,9 +111,15 @@ final class TaskListViewController: UIViewController {
     }
 
     // MARK: - Editing
+    @objc private func toggleEdit() {
+        let newEditing = !isEditing
+        setEditing(newEditing, animated: true)
+    }
+
     override func setEditing(_ editing: Bool, animated: Bool) {
         super.setEditing(editing, animated: animated)
         tableView.setEditing(editing, animated: animated)
+        navigationItem.leftBarButtonItem?.title = editing ? "完成" : "编辑"
     }
 }
 

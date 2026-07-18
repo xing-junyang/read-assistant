@@ -75,7 +75,7 @@ final class AboutViewController: UIViewController {
 
         // Copyright
         let copyrightLabel = UILabel()
-        copyrightLabel.text = "© 2025 Reading Assistant"
+        copyrightLabel.text = "© 2025 阅读助手"
         copyrightLabel.font = UIFont.systemFont(ofSize: 12)
         copyrightLabel.textColor = .textTertiary
         copyrightLabel.textAlignment = .center
