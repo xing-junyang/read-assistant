@@ -15,7 +15,9 @@ final class OCRScanViewController: UIViewController {
     // Camera
     private var captureSession: AVCaptureSession?
     private var previewLayer: AVCaptureVideoPreviewLayer?
+    private var stillImageOutput: AVCaptureStillImageOutput?
     private var capturedImage: UIImage?
+    private var isCapturing = false
 
     // Corner marking
     private var corners: [CGPoint] = []
@@ -191,6 +193,14 @@ final class OCRScanViewController: UIViewController {
             session.addInput(input)
         }
 
+        // Still image output for capturing photos (iOS 10 compatible)
+        let output = AVCaptureStillImageOutput()
+        output.outputSettings = [AVVideoCodecKey: AVVideoCodecJPEG]
+        if session.canAddOutput(output) {
+            session.addOutput(output)
+            self.stillImageOutput = output
+        }
+
         let previewLayer = AVCaptureVideoPreviewLayer(session: session)
         previewLayer.videoGravity = .resizeAspectFill
         previewLayer.frame = view.bounds
@@ -205,18 +215,35 @@ final class OCRScanViewController: UIViewController {
 
     // MARK: - Capture
     @objc private func captureTapped() {
-        guard let session = captureSession, session.isRunning else { return }
+        guard !isCapturing,
+              let stillImageOutput = stillImageOutput,
+              let connection = stillImageOutput.connection(with: .video) else { return }
 
-        // Stop the capture session and take a screenshot of the preview
-        session.stopRunning()
+        isCapturing = true
+        stillImageOutput.captureStillImageAsynchronously(from: connection) { [weak self] buffer, error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.isCapturing = false
+                    self?.showAlert(title: "拍摄失败", message: error.localizedDescription)
+                }
+                return
+            }
 
-        UIGraphicsBeginImageContextWithOptions(view.bounds.size, false, 0)
-        view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
-        let image = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
+            guard let buffer = buffer,
+                  let imageData = AVCaptureStillImageOutput.jpegStillImageNSDataRepresentation(buffer),
+                  let image = UIImage(data: imageData) else {
+                DispatchQueue.main.async {
+                    self?.isCapturing = false
+                    self?.showAlert(title: "拍摄失败", message: "无法获取照片数据")
+                }
+                return
+            }
 
-        if let image = image {
-            showCapturedImage(image)
+            DispatchQueue.main.async {
+                self?.captureSession?.stopRunning()
+                self?.isCapturing = false
+                self?.showCapturedImage(image)
+            }
         }
     }
 
@@ -228,11 +255,13 @@ final class OCRScanViewController: UIViewController {
         overlayView.isHidden = false
 
         captureButton.isHidden = true
+        instructionLabel.isHidden = true
         retakeButton.isHidden = false
         recognizeButton.isHidden = false
         clearCornersButton.isHidden = false
 
         instructionLabel.text = "请点击文档的四个角（左上、右上、右下、左下）进行标记"
+        instructionLabel.isHidden = false
         instructionLabel.textColor = .white
     }
 
@@ -247,6 +276,7 @@ final class OCRScanViewController: UIViewController {
         previewLayer?.isHidden = false
 
         captureButton.isHidden = false
+        instructionLabel.isHidden = false
         retakeButton.isHidden = true
         recognizeButton.isHidden = true
         clearCornersButton.isHidden = true
