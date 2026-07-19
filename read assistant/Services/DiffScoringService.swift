@@ -42,7 +42,7 @@ final class DiffScoringService: ScoringServiceProtocol {
     }
 
     func aggregateScore(from results: [DiffResult]) -> Double {
-        guard !results.isEmpty else { return 100.0 }
+        guard !results.isEmpty else { return 0.0 }
         let total = results.reduce(0.0) { $0 + $1.score }
         return total / Double(results.count)
     }

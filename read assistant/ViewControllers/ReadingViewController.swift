@@ -29,6 +29,8 @@ final class ReadingViewController: UIViewController {
     private var sessionCoinsGained: Int = 0
     /// Level at the start of this session, used to detect level-ups.
     private var sessionStartLevel: Int = 1
+    /// IDs of ReadingSession objects created during this visit, so only new reads count.
+    private var currentSessionIDs: Set<String> = []
 
     // Timer for duration display
     private var timer: Timer?
@@ -429,6 +431,7 @@ final class ReadingViewController: UIViewController {
                         expectedTextIndex: self.currentTextIndex,
                         audioFilePath: audioFilePath
                     )
+                    self.currentSessionIDs.insert(self.currentSession!.id)
 
                     // Provide expected text as context to improve recognition accuracy.
                     // Pass the audio output URL so the speech service saves audio to file
@@ -631,15 +634,21 @@ final class ReadingViewController: UIViewController {
     private func showAggregateResults() {
         guard let task = task else { return }
 
-        // Aggregate all session scores
-        let results = task.sessions.compactMap { $0.result }
+        // Only count sessions created during this visit (not historical re-reads)
+        let currentSessions = task.sessions.filter { currentSessionIDs.contains($0.id) }
+        let results = currentSessions.compactMap { $0.result }
         let overallScore = scoringService.aggregateScore(from: results)
+        let completedCount = currentSessions.count
 
-        // Record check-in for today (once per reading session)
+        // Record check-in only if at least one paragraph was actually read this session
         let rewardManager = RewardManager.shared
-        let checkInResult = rewardManager.recordCheckIn()
+        let checkInResult: RewardManager.CheckInRewardResult
+        if completedCount > 0 {
+            checkInResult = rewardManager.recordCheckIn()
+        } else {
+            checkInResult = .none
+        }
 
-        let completedCount = task.sessions.count
         let totalCount = task.expectedTexts.count
         let newTitle = LevelTitle.title(for: rewardManager.currentLevel)
 
@@ -676,6 +685,7 @@ final class ReadingViewController: UIViewController {
                 self.sessionStartLevel = RewardManager.shared.currentLevel
                 self.sessionXPGained = 0
                 self.sessionCoinsGained = 0
+                self.currentSessionIDs = []
                 self.updateContentForCurrentIndex()
                 self.recordButton.setTitle("🎤 开始录音", for: .normal)
                 self.recordButton.backgroundColor = .errorRed
@@ -998,6 +1008,7 @@ extension ReadingViewController: SpeechRecognitionServiceDelegate {
                     expectedTextIndex: self.currentTextIndex,
                     audioFilePath: audioFilePath
                 )
+                self.currentSessionIDs.insert(self.currentSession!.id)
                 
                 let expectedText = self.task?.expectedTexts[self.currentTextIndex] ?? ""
                 let contextualStrings = Self.extractContextualStrings(from: expectedText)

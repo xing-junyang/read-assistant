@@ -229,7 +229,9 @@ final class SettingsViewController: UIViewController {
         let supportedTypes = ["public.json", "public.plain-text", "public.text"]
         let picker = UIDocumentPickerViewController(documentTypes: supportedTypes, in: .import)
         picker.delegate = self
-        picker.allowsMultipleSelection = false
+        if #available(iOS 11.0, *) {
+            picker.allowsMultipleSelection = false
+        }
         present(picker, animated: true)
     }
 

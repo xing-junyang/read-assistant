@@ -51,21 +51,14 @@ final class TaskPickerViewController: UIViewController {
         title = titleText
         view.backgroundColor = .background
 
-        // Confirm button
+        // Confirm button on the right
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: confirmButtonTitle,
             style: .done,
             target: self,
             action: #selector(confirmTapped)
         )
-
-        // Select all / Deselect all button
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: "全选",
-            style: .plain,
-            target: self,
-            action: #selector(toggleSelectAll)
-        )
+        // Back button is automatically provided by the navigation controller.
 
         // Table view
         tableView.delegate = self
@@ -73,7 +66,7 @@ final class TaskPickerViewController: UIViewController {
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "TaskPickerCell")
         tableView.backgroundColor = .background
         tableView.separatorColor = .separator
-        tableView.allowsMultipleSelection = true
+        tableView.allowsMultipleSelection = false
         tableView.rowHeight = 56
         tableView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(tableView)
@@ -89,7 +82,6 @@ final class TaskPickerViewController: UIViewController {
     private func reloadData() {
         tasks = TaskManager.shared.tasks
         tableView.reloadData()
-        updateSelectAllButtonTitle()
     }
 
     // MARK: - Actions
@@ -105,30 +97,6 @@ final class TaskPickerViewController: UIViewController {
         }
         selectionHandler(selected)
     }
-
-    @objc private func toggleSelectAll() {
-        if selectedIndices.count == tasks.count {
-            // Deselect all
-            selectedIndices.removeAll()
-            for indexPath in tableView.indexPathsForVisibleRows ?? [] {
-                tableView.deselectRow(at: indexPath, animated: true)
-            }
-        } else {
-            // Select all
-            for i in 0..<tasks.count {
-                selectedIndices.insert(i)
-            }
-            for indexPath in tableView.indexPathsForVisibleRows ?? [] {
-                tableView.selectRow(at: indexPath, animated: true, scrollPosition: .none)
-            }
-        }
-        updateSelectAllButtonTitle()
-    }
-
-    private func updateSelectAllButtonTitle() {
-        let allSelected = selectedIndices.count == tasks.count && !tasks.isEmpty
-        navigationItem.leftBarButtonItem?.title = allSelected ? "取消全选" : "全选"
-    }
 }
 
 // MARK: - UITableViewDataSource
@@ -140,6 +108,7 @@ extension TaskPickerViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "TaskPickerCell", for: indexPath)
         let task = tasks[indexPath.row]
+        let isSelected = selectedIndices.contains(indexPath.row)
 
         // Build display text
         let builtInMark = task.isBuiltIn ? " 📌" : ""
@@ -152,11 +121,18 @@ extension TaskPickerViewController: UITableViewDataSource {
         cell.detailTextLabel?.font = UIFont.systemFont(ofSize: 12)
         cell.detailTextLabel?.textColor = .textSecondary
         cell.backgroundColor = .cardBackground
-        cell.selectionStyle = .default
+        cell.selectionStyle = .none
 
-        // Restore selection state
-        if selectedIndices.contains(indexPath.row) {
-            tableView.selectRow(at: indexPath, animated: false, scrollPosition: .none)
+        // Green checkmark on the right when selected
+        if isSelected {
+            let checkmark = UILabel()
+            checkmark.text = "✓"
+            checkmark.font = UIFont.boldSystemFont(ofSize: 20)
+            checkmark.textColor = .successGreen
+            checkmark.sizeToFit()
+            cell.accessoryView = checkmark
+        } else {
+            cell.accessoryView = nil
         }
 
         return cell
@@ -166,12 +142,12 @@ extension TaskPickerViewController: UITableViewDataSource {
 // MARK: - UITableViewDelegate
 extension TaskPickerViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        selectedIndices.insert(indexPath.row)
-        updateSelectAllButtonTitle()
-    }
-
-    func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
-        selectedIndices.remove(indexPath.row)
-        updateSelectAllButtonTitle()
+        tableView.deselectRow(at: indexPath, animated: false)
+        if selectedIndices.contains(indexPath.row) {
+            selectedIndices.remove(indexPath.row)
+        } else {
+            selectedIndices.insert(indexPath.row)
+        }
+        tableView.reloadRows(at: [indexPath], with: .none)
     }
 }
