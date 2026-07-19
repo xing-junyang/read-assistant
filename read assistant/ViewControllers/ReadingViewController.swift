@@ -428,10 +428,11 @@ final class ReadingViewController: UIViewController {
                     let audioFilePath = AudioRecordingManager.generateAudioFilePath()
                     let audioURL = URL(fileURLWithPath: audioFilePath)
 
-                    // Create a new session with the audio file path
+                    // Create a new session with the audio file path.
+                    // Store only the filename (not absolute path) so paths survive app updates.
                     self.currentSession = ReadingSession(
                         expectedTextIndex: self.currentTextIndex,
-                        audioFilePath: audioFilePath
+                        audioFilePath: audioURL.lastPathComponent
                     )
                     self.currentSessionIDs.insert(self.currentSession!.id)
 
@@ -1059,7 +1060,7 @@ extension ReadingViewController: SpeechRecognitionServiceDelegate {
                 
                 self.currentSession = ReadingSession(
                     expectedTextIndex: self.currentTextIndex,
-                    audioFilePath: audioFilePath
+                    audioFilePath: audioURL.lastPathComponent
                 )
                 self.currentSessionIDs.insert(self.currentSession!.id)
                 

@@ -276,7 +276,10 @@ final class SettingsViewController: UIViewController {
     private func exportAudio(_ tasks: [ReadingTask]) {
         // Check if there are any audio files first
         let hasAudio = tasks.contains { task in
-            task.sessions.contains { $0.audioFilePath != nil && AudioRecordingManager.audioFileExists(at: $0.audioFilePath!) }
+            task.sessions.contains { session in
+                guard let path = session.audioFilePath else { return false }
+                return AudioRecordingManager.audioFileExists(at: path)
+            }
         }
         guard hasAudio else {
             showAlert(title: "提示", message: "所选任务没有录音文件")

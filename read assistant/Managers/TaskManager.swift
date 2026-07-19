@@ -204,7 +204,27 @@ final class TaskManager {
                 print("[TaskManager] Failed to load tasks: \(error.localizedDescription)")
             }
         }
+        // Migrate legacy absolute audio file paths to filenames.
+        // After an app update, the container UUID changes, making absolute paths invalid.
+        migrateAudioFilePaths()
         // Always ensure built-in tasks exist after loading
         ensureBuiltInTasks()
+    }
+
+    /// Converts legacy absolute audio file paths to just filenames.
+    /// Absolute paths become invalid after app updates because the iOS container UUID changes.
+    private func migrateAudioFilePaths() {
+        var needsSave = false
+        for task in tasks {
+            for session in task.sessions {
+                guard let path = session.audioFilePath, path.hasPrefix("/") else { continue }
+                let filename = URL(fileURLWithPath: path).lastPathComponent
+                session.audioFilePath = filename
+                needsSave = true
+            }
+        }
+        if needsSave {
+            saveTasks()
+        }
     }
 }

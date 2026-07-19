@@ -176,7 +176,8 @@ final class ImportExportManager {
                 guard let audioPath = session.audioFilePath,
                       AudioRecordingManager.audioFileExists(at: audioPath) else { continue }
 
-                let sourceURL = URL(fileURLWithPath: audioPath)
+                let fullPath = AudioRecordingManager.resolveStoredPath(audioPath)
+                let sourceURL = URL(fileURLWithPath: fullPath)
                 let safeTaskName = task.title.replacingOccurrences(of: "/", with: "_")
                     .replacingOccurrences(of: ":", with: "_")
                 let fileName = "\(safeTaskName)_session_\(session.startTime.shortChineseFormat.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")).caf"

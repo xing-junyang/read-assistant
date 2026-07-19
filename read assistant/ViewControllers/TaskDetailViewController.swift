@@ -156,7 +156,8 @@ final class TaskDetailViewController: UIViewController {
         }
 
         do {
-            let url = URL(fileURLWithPath: audioPath)
+            let fullPath = AudioRecordingManager.resolveStoredPath(audioPath)
+            let url = URL(fileURLWithPath: fullPath)
             try playbackBar.loadAudio(url: url)
             playbackBar.play()
             currentlyPlayingSessionId = session.id

@@ -111,6 +111,7 @@ final class StorageManager {
         for task in tasks {
             for session in task.sessions {
                 guard let audioPath = session.audioFilePath else { continue }
+                let resolvedPath = AudioRecordingManager.resolveStoredPath(audioPath)
                 let idx = session.expectedTextIndex
                 let paragraph: String
                 if idx < task.expectedTexts.count {
@@ -119,7 +120,7 @@ final class StorageManager {
                 } else {
                     paragraph = "第\(idx + 1)段"
                 }
-                map[audioPath] = (task.title, paragraph)
+                map[resolvedPath] = (task.title, paragraph)
             }
         }
         return map

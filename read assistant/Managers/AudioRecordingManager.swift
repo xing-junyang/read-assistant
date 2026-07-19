@@ -98,14 +98,41 @@ final class AudioRecordingManager: NSObject {
     }
 
     /// Deletes the audio file at the given path.
+    /// The path can be either an absolute path (legacy) or a filename (current).
     static func deleteAudioFile(at path: String) {
-        guard FileManager.default.fileExists(atPath: path) else { return }
-        try? FileManager.default.removeItem(atPath: path)
+        let fullPath = resolveStoredPath(path)
+        guard FileManager.default.fileExists(atPath: fullPath) else { return }
+        try? FileManager.default.removeItem(atPath: fullPath)
     }
 
     /// Checks if an audio file exists at the given path.
+    /// The path can be either an absolute path (legacy) or a filename (current).
     static func audioFileExists(at path: String) -> Bool {
-        return FileManager.default.fileExists(atPath: path)
+        let fullPath = resolveStoredPath(path)
+        return FileManager.default.fileExists(atPath: fullPath)
+    }
+
+    /// Returns the current AudioRecordings directory path.
+    static func audioFilesDirectory() -> String {
+        let docsDir = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
+        return URL(fileURLWithPath: docsDir).appendingPathComponent("AudioRecordings").path
+    }
+
+    /// Resolves a stored audio file path to an absolute path.
+    /// - If the path is absolute (starts with "/"), extracts just the filename
+    ///   and combines with the current AudioRecordings directory.
+    ///   This handles legacy absolute paths that become invalid after app updates.
+    /// - If the path is a relative filename, combines with the current
+    ///   AudioRecordings directory.
+    static func resolveStoredPath(_ path: String) -> String {
+        let filename: String
+        if path.hasPrefix("/") {
+            // Legacy absolute path — extract just the filename
+            filename = URL(fileURLWithPath: path).lastPathComponent
+        } else {
+            filename = path
+        }
+        return URL(fileURLWithPath: audioFilesDirectory()).appendingPathComponent(filename).path
     }
 
     // MARK: - File Path Generation
@@ -115,8 +142,7 @@ final class AudioRecordingManager: NSObject {
     /// via AVAudioEngine tap buffers (linear PCM). This format is lossless and
     /// avoids the transcoding issues that can occur with compressed formats like AAC.
     static func generateAudioFilePath() -> String {
-        let docsDir = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
-        let audioDir = URL(fileURLWithPath: docsDir).appendingPathComponent("AudioRecordings").path
+        let audioDir = audioFilesDirectory()
 
         // Create directory if it doesn't exist
         if !FileManager.default.fileExists(atPath: audioDir) {
