@@ -71,12 +71,19 @@ struct ShopCatalog {
         ShopItem(id: "toy", name: "选一个玩具", icon: "🎰", price: 300),
         ShopItem(id: "amusement_park", name: "周末去游乐园", icon: "🎢", price: 2000),
         ShopItem(id: "movie", name: "看一场电影", icon: "🎬", price: 1000),
-        ShopItem(id: "pizza", name: "吃一顿披萨", icon: "🍕", price: 1000)
+        ShopItem(id: "pizza", name: "吃一顿披萨", icon: "🍕", price: 1000),
+        // Heart items
+        ShopItem(id: "hearts_5", name: "购买五颗红心", icon: "❤️", price: 20),
+        ShopItem(id: "hearts_refill", name: "补满红心", icon: "💖", price: 50),
+        ShopItem(id: "hearts_upgrade", name: "提高红心上限+2", icon: "💗", price: 0),
     ]
 
     static func item(withId id: String) -> ShopItem? {
         return allItems.first { $0.id == id }
     }
+
+    /// Heart-specific shop item IDs.
+    static let heartItemIDs: Set<String> = ["hearts_5", "hearts_refill", "hearts_upgrade"]
 }
 
 // MARK: - Inventory Item

@@ -357,9 +357,36 @@ final class RewardsViewController: UIViewController {
         shopStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
         let manager = RewardManager.shared
+        let heartsManager = HeartsManager.shared
 
         for (index, item) in ShopCatalog.allItems.enumerated() {
-            let row = createShopItemRow(item: item, canAfford: manager.coins >= item.price)
+            let canAfford: Bool
+            let statusText: String?
+
+            if ShopCatalog.heartItemIDs.contains(item.id) {
+                // Heart items: determine affordability and status
+                switch item.id {
+                case "hearts_5":
+                    canAfford = manager.coins >= item.price && heartsManager.hearts < heartsManager.maxHearts
+                    statusText = "❤️ \(heartsManager.hearts)/\(heartsManager.maxHearts)"
+                case "hearts_refill":
+                    let needsRefill = heartsManager.hearts < heartsManager.maxHearts
+                    canAfford = manager.coins >= item.price && needsRefill
+                    statusText = "❤️ \(heartsManager.hearts)/\(heartsManager.maxHearts)"
+                case "hearts_upgrade":
+                    let canUpgrade = heartsManager.canUpgradeMaxHearts
+                    canAfford = canUpgrade // No coin cost for upgrade (handled in purchase logic)
+                    statusText = "上限 \(heartsManager.maxHearts) → \(min(heartsManager.maxHearts + 2, 30))"
+                default:
+                    canAfford = manager.coins >= item.price
+                    statusText = nil
+                }
+            } else {
+                canAfford = manager.coins >= item.price
+                statusText = nil
+            }
+
+            let row = createShopItemRow(item: item, canAfford: canAfford, statusText: statusText)
             shopStack.addArrangedSubview(row)
 
             if index < ShopCatalog.allItems.count - 1 {
@@ -372,7 +399,7 @@ final class RewardsViewController: UIViewController {
         }
     }
 
-    private func createShopItemRow(item: ShopItem, canAfford: Bool) -> UIView {
+    private func createShopItemRow(item: ShopItem, canAfford: Bool, statusText: String? = nil) -> UIView {
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
 
@@ -388,16 +415,30 @@ final class RewardsViewController: UIViewController {
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let priceLabel = UILabel()
-        priceLabel.text = "💰 \(item.price)"
+        priceLabel.text = item.price > 0 ? "💰 \(item.price)" : (statusText ?? "")
         priceLabel.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
         priceLabel.textColor = canAfford ? .accent : .textTertiary
         priceLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Status label for heart items (shows current hearts / max)
+        let extraLabel = UILabel()
+        extraLabel.font = UIFont.systemFont(ofSize: 11)
+        extraLabel.textColor = .textTertiary
+        extraLabel.translatesAutoresizingMaskIntoConstraints = false
+        if let status = statusText {
+            extraLabel.text = status
+        }
 
         let buyButton = UIButton(type: .system)
-        buyButton.setTitle("购买", for: .normal)
+        if item.id == "hearts_upgrade" && !HeartsManager.shared.canUpgradeMaxHearts {
+            buyButton.setTitle("已满", for: .normal)
+            buyButton.setTitleColor(.textTertiary, for: .normal)
+        } else {
+            buyButton.setTitle("购买", for: .normal)
+            buyButton.setTitleColor(canAfford ? .white : .textTertiary, for: .normal)
+        }
         buyButton.titleLabel?.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
         buyButton.backgroundColor = canAfford ? .primary : .separator
-        buyButton.setTitleColor(canAfford ? .white : .textTertiary, for: .normal)
         buyButton.layer.cornerRadius = 6
         buyButton.isEnabled = canAfford
         buyButton.translatesAutoresizingMaskIntoConstraints = false
@@ -409,20 +450,25 @@ final class RewardsViewController: UIViewController {
         container.addSubview(iconLabel)
         container.addSubview(nameLabel)
         container.addSubview(priceLabel)
+        container.addSubview(extraLabel)
         container.addSubview(buyButton)
 
         NSLayoutConstraint.activate([
-            container.heightAnchor.constraint(equalToConstant: 44),
+            container.heightAnchor.constraint(equalToConstant: 48),
 
             iconLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
             iconLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             iconLabel.widthAnchor.constraint(equalToConstant: 32),
 
             nameLabel.leadingAnchor.constraint(equalTo: iconLabel.trailingAnchor, constant: 8),
-            nameLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            nameLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
 
             priceLabel.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 8),
-            priceLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            priceLabel.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
+
+            extraLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            extraLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
+            extraLabel.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -4),
 
             buyButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -4),
             buyButton.centerYAnchor.constraint(equalTo: container.centerYAnchor)
@@ -543,6 +589,13 @@ final class RewardsViewController: UIViewController {
         let item = ShopCatalog.allItems[index]
 
         let manager = RewardManager.shared
+
+        // Handle heart items specially — they affect HeartsManager directly, not inventory
+        if ShopCatalog.heartItemIDs.contains(item.id) {
+            handleHeartPurchase(item: item)
+            return
+        }
+
         guard manager.coins >= item.price else {
             showAlert(title: "金币不足", message: "你需要 \(item.price) 个金币来购买「\(item.name)」，当前有 \(manager.coins) 个金币。")
             return
@@ -562,6 +615,98 @@ final class RewardsViewController: UIViewController {
             }
         })
         present(alert, animated: true)
+    }
+    
+    // MARK: - Heart Purchase Handling
+    
+    private func handleHeartPurchase(item: ShopItem) {
+        let manager = RewardManager.shared
+        let heartsManager = HeartsManager.shared
+        
+        switch item.id {
+        case "hearts_5":
+            guard manager.coins >= 20 else {
+                showAlert(title: "金币不足", message: "你需要 20 个金币来购买五颗红心，当前有 \(manager.coins) 个金币。")
+                return
+            }
+            guard heartsManager.hearts < heartsManager.maxHearts else {
+                showAlert(title: "红心已满", message: "你的红心已经满了，不需要购买。")
+                return
+            }
+            
+            let alert = UIAlertController(
+                title: "确认购买",
+                message: "花费 💰 20 购买五颗红心？\n当前：❤️ \(heartsManager.hearts)/\(heartsManager.maxHearts)",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+            alert.addAction(UIAlertAction(title: "购买", style: .default) { [weak self] _ in
+                guard manager.spendCoins(20) else { return }
+                let added = heartsManager.buyFiveHearts()
+                self?.refreshAll()
+                if added > 0 {
+                    self?.showAlert(title: "购买成功", message: "获得 \(added) 颗红心！当前：❤️ \(heartsManager.hearts)/\(heartsManager.maxHearts)")
+                }
+            })
+            present(alert, animated: true)
+            
+        case "hearts_refill":
+            guard manager.coins >= 50 else {
+                showAlert(title: "金币不足", message: "你需要 50 个金币来补满红心，当前有 \(manager.coins) 个金币。")
+                return
+            }
+            guard heartsManager.hearts < heartsManager.maxHearts else {
+                showAlert(title: "红心已满", message: "你的红心已经是满的，不需要补满。")
+                return
+            }
+            
+            let alert = UIAlertController(
+                title: "确认购买",
+                message: "花费 💰 50 补满红心？\n当前：❤️ \(heartsManager.hearts)/\(heartsManager.maxHearts)",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+            alert.addAction(UIAlertAction(title: "购买", style: .default) { [weak self] _ in
+                guard manager.spendCoins(50) else { return }
+                let added = heartsManager.refillHearts()
+                self?.refreshAll()
+                self?.showAlert(title: "补满成功", message: "补满 \(added) 颗红心！当前：❤️ \(heartsManager.hearts)/\(heartsManager.maxHearts)")
+            })
+            present(alert, animated: true)
+            
+        case "hearts_upgrade":
+            guard heartsManager.canUpgradeMaxHearts else {
+                showAlert(title: "已达上限", message: "红心上限已达到最大值 30，无法继续提升。")
+                return
+            }
+            
+            let upgradeCost = 100
+            guard manager.coins >= upgradeCost else {
+                showAlert(title: "金币不足", message: "你需要 \(upgradeCost) 个金币来提升红心上限，当前有 \(manager.coins) 个金币。")
+                return
+            }
+            
+            let newMax = min(heartsManager.maxHearts + 2, 30)
+            let alert = UIAlertController(
+                title: "确认购买",
+                message: "花费 💰 \(upgradeCost) 将红心上限从 \(heartsManager.maxHearts) 提升到 \(newMax)？",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+            alert.addAction(UIAlertAction(title: "购买", style: .default) { [weak self] _ in
+                guard manager.spendCoins(upgradeCost) else { return }
+                guard heartsManager.upgradeMaxHearts() else {
+                    self?.showAlert(title: "升级失败", message: "红心上限已达到最大值。")
+                    return
+                }
+                self?.refreshAll()
+                self?.showAlert(title: "升级成功", message: "红心上限已提升到 \(heartsManager.maxHearts)！")
+            })
+            present(alert, animated: true)
+            
+        default:
+            break
+        }
     }
 
     @objc private func redeemButtonTapped(_ sender: UIButton) {

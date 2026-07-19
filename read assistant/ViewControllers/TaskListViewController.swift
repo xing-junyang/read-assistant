@@ -8,6 +8,11 @@ final class TaskListViewController: UIViewController {
     // MARK: - Properties
     private let tableView = UITableView(frame: .zero, style: .plain)
     private let emptyStateView = UIView()
+    private let heartsBar = UIView()
+    private let heartsIconLabel = UILabel()
+    private let heartsCountLabel = UILabel()
+    private let heartsTimerLabel = UILabel()
+    private var heartsRefreshTimer: Timer?
 
     private var tasks: [ReadingTask] {
         return TaskManager.shared.tasks
@@ -18,6 +23,7 @@ final class TaskListViewController: UIViewController {
         super.viewDidLoad()
         setupUI()
         setupNavigationBar()
+        setupHeartsBar()
         setupTableView()
     }
 
@@ -25,6 +31,13 @@ final class TaskListViewController: UIViewController {
         super.viewWillAppear(animated)
         tableView.reloadData()
         updateEmptyState()
+        refreshHeartsBar()
+        startHeartsTimer()
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        stopHeartsTimer()
     }
 
     // MARK: - UI Setup
@@ -87,11 +100,93 @@ final class TaskListViewController: UIViewController {
         view.addSubview(tableView)
 
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.topAnchor),
+            tableView.topAnchor.constraint(equalTo: heartsBar.bottomAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
+    }
+    
+    // MARK: - Hearts Bar
+    
+    private func setupHeartsBar() {
+        heartsBar.backgroundColor = .cardBackground
+        heartsBar.layer.shadowColor = UIColor.black.cgColor
+        heartsBar.layer.shadowOpacity = 0.05
+        heartsBar.layer.shadowOffset = CGSize(width: 0, height: 1)
+        heartsBar.layer.shadowRadius = 2
+        heartsBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(heartsBar)
+        
+        heartsIconLabel.font = UIFont.systemFont(ofSize: 14)
+        heartsIconLabel.text = "❤️"
+        heartsIconLabel.translatesAutoresizingMaskIntoConstraints = false
+        heartsBar.addSubview(heartsIconLabel)
+        
+        heartsCountLabel.font = UIFont.systemFont(ofSize: 18, weight: .bold)
+        heartsCountLabel.textColor = .textPrimary
+        heartsCountLabel.translatesAutoresizingMaskIntoConstraints = false
+        heartsBar.addSubview(heartsCountLabel)
+        
+        heartsTimerLabel.font = UIFont.systemFont(ofSize: 14, weight: .bold)
+        heartsTimerLabel.textColor = .textTertiary
+        heartsTimerLabel.translatesAutoresizingMaskIntoConstraints = false
+        heartsBar.addSubview(heartsTimerLabel)
+        
+        NSLayoutConstraint.activate([
+            heartsBar.topAnchor.constraint(equalTo: compatSafeAreaTop),
+            heartsBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            heartsBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            heartsBar.heightAnchor.constraint(equalToConstant: 44),
+            
+            heartsIconLabel.leadingAnchor.constraint(equalTo: heartsBar.leadingAnchor, constant: 16),
+            heartsIconLabel.centerYAnchor.constraint(equalTo: heartsBar.centerYAnchor),
+            
+            heartsCountLabel.leadingAnchor.constraint(equalTo: heartsIconLabel.trailingAnchor, constant: 6),
+            heartsCountLabel.centerYAnchor.constraint(equalTo: heartsBar.centerYAnchor),
+            
+            heartsTimerLabel.trailingAnchor.constraint(equalTo: heartsBar.trailingAnchor, constant: -16),
+            heartsTimerLabel.centerYAnchor.constraint(equalTo: heartsBar.centerYAnchor)
+        ])
+    }
+    
+    private func refreshHeartsBar() {
+        let heartsManager = HeartsManager.shared
+        let hearts = heartsManager.hearts
+        let maxHearts = heartsManager.maxHearts
+        
+        if heartsManager.unlimitedHearts {
+            heartsCountLabel.text = "∞"
+            heartsCountLabel.textColor = .accent
+            heartsTimerLabel.text = "无限模式"
+            heartsTimerLabel.textColor = .accent
+        } else {
+            heartsCountLabel.text = "\(hearts)/\(maxHearts)"
+            heartsCountLabel.textColor = hearts > 0 ? .textPrimary : .errorRed
+            
+            if hearts >= maxHearts {
+                heartsTimerLabel.text = "⏱ 已满"
+                heartsTimerLabel.textColor = .textPrimary
+            } else {
+                let remaining = heartsManager.secondsUntilNextHeart
+                let minutes = Int(remaining) / 60
+                let seconds = Int(remaining) % 60
+                heartsTimerLabel.text = "⏱ \(minutes):\(String(format: "%02d", seconds))"
+                heartsTimerLabel.textColor = .textPrimary
+            }
+        }
+    }
+    
+    private func startHeartsTimer() {
+        stopHeartsTimer()
+        heartsRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.refreshHeartsBar()
+        }
+    }
+    
+    private func stopHeartsTimer() {
+        heartsRefreshTimer?.invalidate()
+        heartsRefreshTimer = nil
     }
 
     private func updateEmptyState() {

@@ -13,12 +13,14 @@ final class DeveloperSettingsViewController: UIViewController {
         case api
         case rewards
         case quiz
+        case hearts
 
         var title: String {
             switch self {
             case .api: return "API 配置"
             case .rewards: return "奖励数据调试"
             case .quiz: return "闯关数据调试"
+            case .hearts: return "红心调试"
             }
         }
     }
@@ -77,6 +79,22 @@ final class DeveloperSettingsViewController: UIViewController {
             switch self {
             case .setLevel: return "设置闯关数"
             case .resetLevels: return "重置闯关数（归零）"
+            }
+        }
+    }
+
+    private enum HeartRow: Int, CaseIterable {
+        case toggleUnlimited
+        case setHearts
+        case setMaxHearts
+        case refillHearts
+
+        var title: String {
+            switch self {
+            case .toggleUnlimited: return "无限红心模式"
+            case .setHearts: return "设置红心数量"
+            case .setMaxHearts: return "设置红心上限"
+            case .refillHearts: return "补满红心"
             }
         }
     }
@@ -199,6 +217,8 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             return RewardRow.allCases.count
         case .quiz:
             return QuizRow.allCases.count
+        case .hearts:
+            return HeartRow.allCases.count
         }
     }
 
@@ -223,6 +243,8 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             configureRewardCell(cell, at: indexPath)
         case .quiz:
             configureQuizCell(cell, at: indexPath)
+        case .hearts:
+            configureHeartCell(cell, at: indexPath)
         }
 
         return cell
@@ -301,6 +323,8 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             return "调试用：可直接修改奖励数据，方便测试各功能。"
         case .quiz:
             return "调试用：可设置或重置闯关进度。"
+        case .hearts:
+            return "调试用：可开关无限红心模式、修改红心数量和上限。"
         }
     }
 }
@@ -321,6 +345,9 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
         case .quiz:
             guard let row = QuizRow(rawValue: indexPath.row) else { return }
             handleQuizAction(for: row)
+        case .hearts:
+            guard let row = HeartRow(rawValue: indexPath.row) else { return }
+            handleHeartAction(for: row)
         }
     }
     
@@ -402,6 +429,42 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
         cell.backgroundColor = .cardBackground
     }
 
+    private func configureHeartCell(_ cell: UITableViewCell, at indexPath: IndexPath) {
+        guard let row = HeartRow(rawValue: indexPath.row) else { return }
+        let heartsManager = HeartsManager.shared
+
+        cell.textLabel?.text = row.title
+        cell.textLabel?.font = UIFont.systemFont(ofSize: 16)
+        cell.textLabel?.textColor = .textPrimary
+        cell.detailTextLabel?.font = UIFont.systemFont(ofSize: 12)
+
+        switch row {
+        case .toggleUnlimited:
+            if heartsManager.unlimitedHearts {
+                cell.detailTextLabel?.text = "当前: ✅ 已开启 ∞"
+                cell.detailTextLabel?.textColor = .successGreen
+            } else {
+                cell.detailTextLabel?.text = "当前: ❌ 已关闭"
+                cell.detailTextLabel?.textColor = .textSecondary
+            }
+            cell.accessoryType = .none
+        case .setHearts:
+            cell.detailTextLabel?.text = "当前: ❤️ \(heartsManager.hearts)/\(heartsManager.maxHearts)"
+            cell.detailTextLabel?.textColor = .textSecondary
+            cell.accessoryType = .disclosureIndicator
+        case .setMaxHearts:
+            cell.detailTextLabel?.text = "当前上限: \(heartsManager.maxHearts) (最大30)"
+            cell.detailTextLabel?.textColor = .textSecondary
+            cell.accessoryType = .disclosureIndicator
+        case .refillHearts:
+            cell.detailTextLabel?.text = "补满到 \(heartsManager.maxHearts) 颗"
+            cell.detailTextLabel?.textColor = .textSecondary
+            cell.accessoryType = .disclosureIndicator
+        }
+
+        cell.backgroundColor = .cardBackground
+    }
+
     private func handleQuizAction(for row: QuizRow) {
         let manager = WrongAnswerBookManager.shared
         switch row {
@@ -421,6 +484,50 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
                 self?.tableView.reloadData()
                 self?.showAlert(title: "完成", message: "闯关数已重置为 0")
             }
+        }
+    }
+    
+    // MARK: - Heart Debug Actions
+    
+    private func handleHeartAction(for row: HeartRow) {
+        let heartsManager = HeartsManager.shared
+        
+        switch row {
+        case .toggleUnlimited:
+            let newValue = !heartsManager.unlimitedHearts
+            heartsManager.unlimitedHearts = newValue
+            if newValue {
+                heartsManager.debugRefillHearts()
+            }
+            tableView.reloadData()
+            showAlert(title: "完成", message: newValue ? "无限红心模式已开启 ∞" : "无限红心模式已关闭")
+            
+        case .setHearts:
+            showNumberInput(title: "设置红心数量", message: "当前: ❤️ \(heartsManager.hearts)/\(heartsManager.maxHearts)", currentValue: "\(heartsManager.hearts)") { [weak self] value in
+                guard value >= 0 else {
+                    self?.showAlert(title: "错误", message: "红心数量不能为负数")
+                    return
+                }
+                heartsManager.debugSetHearts(value)
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "红心数量已设置为 \(heartsManager.hearts)")
+            }
+            
+        case .setMaxHearts:
+            showNumberInput(title: "设置红心上限", message: "当前: \(heartsManager.maxHearts) (最大30)", currentValue: "\(heartsManager.maxHearts)") { [weak self] value in
+                guard value >= 1, value <= 30 else {
+                    self?.showAlert(title: "错误", message: "红心上限必须在 1 到 30 之间")
+                    return
+                }
+                heartsManager.debugSetMaxHearts(value)
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "红心上限已设置为 \(heartsManager.maxHearts)")
+            }
+            
+        case .refillHearts:
+            heartsManager.debugRefillHearts()
+            tableView.reloadData()
+            showAlert(title: "完成", message: "红心已补满！当前：❤️ \(heartsManager.hearts)/\(heartsManager.maxHearts)")
         }
     }
     

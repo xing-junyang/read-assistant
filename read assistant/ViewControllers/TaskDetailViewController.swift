@@ -106,8 +106,8 @@ final class TaskDetailViewController: UIViewController {
     }
 
     private func setupStartButton() {
-        startReadingButton.setTitle("开始阅读", for: .normal)
-        startReadingButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        startReadingButton.titleLabel?.numberOfLines = 2
+        startReadingButton.titleLabel?.textAlignment = .center
         startReadingButton.setTitleColor(.white, for: .normal)
         startReadingButton.backgroundColor = .primary
         startReadingButton.layer.cornerRadius = 12
@@ -129,11 +129,37 @@ final class TaskDetailViewController: UIViewController {
         let hasTexts = !task.expectedTexts.isEmpty
         startReadingButton.isEnabled = hasTexts
         startReadingButton.alpha = hasTexts ? 1.0 : 0.5
+        
+        let heartsManager = HeartsManager.shared
+        let hearts = heartsManager.hearts
+        let maxHearts = heartsManager.maxHearts
+        let heartsText: String
+        if heartsManager.unlimitedHearts {
+            heartsText = "❤️ ∞"
+        } else {
+            heartsText = "❤️ \(hearts)/\(maxHearts)"
+        }
+        
+        let mainText = hasTexts ? "开始阅读" : "暂无文本"
+        let fullText = "\(mainText)\n\(heartsText)"
+        let nsText = fullText as NSString
+        let attrString = NSMutableAttributedString(string: fullText)
+        // Apply hearts style (smaller) to entire string first
+        attrString.addAttributes([
+            .font: UIFont.systemFont(ofSize: 12),
+            .foregroundColor: UIColor.white.withAlphaComponent(0.85)
+        ], range: NSRange(location: 0, length: nsText.length))
+        // Override main text with larger font
+        let mainNSRange = nsText.range(of: mainText)
+        attrString.addAttributes([
+            .font: UIFont.systemFont(ofSize: 18, weight: .semibold),
+            .foregroundColor: UIColor.white
+        ], range: mainNSRange)
+        startReadingButton.setAttributedTitle(attrString, for: .normal)
+        
         if hasTexts {
-            startReadingButton.setTitle("开始阅读", for: .normal)
             startReadingButton.backgroundColor = .primary
         } else {
-            startReadingButton.setTitle("暂无文本", for: .normal)
             startReadingButton.backgroundColor = .textSecondary
         }
     }
@@ -276,6 +302,23 @@ final class TaskDetailViewController: UIViewController {
 
     @objc private func startReadingTapped() {
         guard let task = task, !task.expectedTexts.isEmpty else { return }
+
+        // Check hearts
+        let heartsManager = HeartsManager.shared
+        if !heartsManager.consumeHeart() {
+            // No hearts available — show alert with time until next heart
+            let remaining = heartsManager.secondsUntilNextHeart
+            let minutes = Int(remaining) / 60
+            let seconds = Int(remaining) % 60
+            let timeStr = remaining > 0 ? "\(minutes)分\(seconds)秒" : "片刻"
+            showAlert(
+                title: "红心不足",
+                message: "你的红心已用完！\n下一颗红心将在 \(timeStr) 后恢复。\n你可以去商店购买红心或等待自动恢复。"
+            )
+            updateStartButton()
+            return
+        }
+
         let readingVC = ReadingViewController(taskId: task.id)
         navigationController?.pushViewController(readingVC, animated: true)
     }
