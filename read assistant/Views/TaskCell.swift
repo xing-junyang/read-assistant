@@ -104,7 +104,11 @@ final class TaskCell: UITableViewCell {
 
     // MARK: - Configuration
     func configure(with task: ReadingTask) {
-        titleLabel.text = task.title
+        if task.isBuiltIn {
+            titleLabel.text = "📌 \(task.title)"
+        } else {
+            titleLabel.text = task.title
+        }
         descriptionLabel.text = task.detailDescription.isEmpty ? "暂无描述" : task.detailDescription
 
         let total = task.expectedTexts.count

@@ -9,11 +9,13 @@ final class SettingsViewController: UIViewController {
 
     private enum Section: Int, CaseIterable {
         case general
+        case importExport
         case developer
 
         var title: String {
             switch self {
             case .general: return "通用"
+            case .importExport: return "导入导出"
             case .developer: return "开发者"
             }
         }
@@ -45,6 +47,9 @@ final class SettingsViewController: UIViewController {
     }
 
     private var dataSource: [[Item]] = []
+
+    /// Temporarily stores selected tasks for import target.
+    private var selectedImportTargets: [ReadingTask] = []
 
     // MARK: - Lifecycle
     override func viewDidLoad() {
@@ -143,6 +148,18 @@ final class SettingsViewController: UIViewController {
         
         dataSource = [
             generalItems,
+            // Import / Export
+            [
+                Item(title: "批量导入文段", icon: "📥", accessoryType: .disclosureIndicator) { [weak self] in
+                    self?.showImportPicker()
+                },
+                Item(title: "批量导出文段", icon: "📤", accessoryType: .disclosureIndicator) { [weak self] in
+                    self?.showExportTextsPicker()
+                },
+                Item(title: "导出音频", icon: "🎙", accessoryType: .disclosureIndicator) { [weak self] in
+                    self?.showExportAudioPicker()
+                }
+            ],
             // Developer
             [
                 Item(title: "开发者设置", icon: "🔧", accessoryType: .disclosureIndicator) { [weak self] in
@@ -193,6 +210,104 @@ final class SettingsViewController: UIViewController {
             }
         })
         present(alert, animated: true)
+    }
+
+    // MARK: - Import / Export
+
+    /// Shows task picker for batch import, then opens document picker for JSON or text files.
+    /// The imported content will be added as expected texts to the selected tasks.
+    private func showImportPicker() {
+        let picker = TaskPickerViewController(title: "选择导入目标", confirmButtonTitle: "选择文件") { [weak self] selectedTasks in
+            self?.selectedImportTargets = selectedTasks
+            self?.openDocumentPickerForImport()
+        }
+        navigationController?.pushViewController(picker, animated: true)
+    }
+
+    /// Opens document picker for importing JSON or plain text files.
+    private func openDocumentPickerForImport() {
+        let supportedTypes = ["public.json", "public.plain-text", "public.text"]
+        let picker = UIDocumentPickerViewController(documentTypes: supportedTypes, in: .import)
+        picker.delegate = self
+        picker.allowsMultipleSelection = false
+        present(picker, animated: true)
+    }
+
+    /// Shows task picker for batch export of text passages.
+    private func showExportTextsPicker() {
+        let picker = TaskPickerViewController(title: "选择导出任务", confirmButtonTitle: "导出") { [weak self] selectedTasks in
+            self?.exportTexts(selectedTasks)
+        }
+        navigationController?.pushViewController(picker, animated: true)
+    }
+
+    /// Shows task picker for audio export.
+    private func showExportAudioPicker() {
+        let picker = TaskPickerViewController(title: "选择导出音频", confirmButtonTitle: "导出") { [weak self] selectedTasks in
+            self?.exportAudio(selectedTasks)
+        }
+        navigationController?.pushViewController(picker, animated: true)
+    }
+
+    /// Exports text passages from selected tasks to a JSON file and shares it.
+    private func exportTexts(_ tasks: [ReadingTask]) {
+        ImportExportManager.shared.exportTexts(tasks: tasks) { [weak self] fileURL in
+            guard let self = self, let fileURL = fileURL else {
+                self?.showAlert(title: "导出失败", message: "无法生成导出文件")
+                return
+            }
+            DispatchQueue.main.async {
+                self.shareFile(at: fileURL)
+            }
+        }
+    }
+
+    /// Exports audio files from selected tasks and shares them.
+    private func exportAudio(_ tasks: [ReadingTask]) {
+        // Check if there are any audio files first
+        let hasAudio = tasks.contains { task in
+            task.sessions.contains { $0.audioFilePath != nil && AudioRecordingManager.audioFileExists(at: $0.audioFilePath!) }
+        }
+        guard hasAudio else {
+            showAlert(title: "提示", message: "所选任务没有录音文件")
+            return
+        }
+
+        ImportExportManager.shared.exportAudio(tasks: tasks) { [weak self] fileURLs in
+            guard let self = self, let fileURLs = fileURLs, !fileURLs.isEmpty else {
+                self?.showAlert(title: "导出失败", message: "无法导出音频文件")
+                return
+            }
+            DispatchQueue.main.async {
+                // If only one file, share directly; otherwise share all files
+                if fileURLs.count == 1 {
+                    self.shareFile(at: fileURLs[0])
+                } else {
+                    self.shareFiles(fileURLs)
+                }
+            }
+        }
+    }
+
+    /// Presents a UIActivityViewController to share a single file.
+    private func shareFile(at url: URL) {
+        let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        // iPad popover support
+        if let popover = activityVC.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(activityVC, animated: true)
+    }
+
+    /// Presents a UIActivityViewController to share multiple files.
+    private func shareFiles(_ urls: [URL]) {
+        let activityVC = UIActivityViewController(activityItems: urls, applicationActivities: nil)
+        if let popover = activityVC.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(activityVC, animated: true)
     }
 }
 
@@ -323,6 +438,100 @@ extension SettingsViewController: UITableViewDelegate {
         let row = sender.tag % 100
         guard section < dataSource.count, row < dataSource[section].count else { return }
         dataSource[section][row].toggleChanged?(sender.isOn)
+    }
+}
+
+// MARK: - UIDocumentPickerDelegate
+extension SettingsViewController: UIDocumentPickerDelegate {
+
+    /// iOS 10 compatible delegate method (singular).
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
+        handleImportedFile(at: url)
+    }
+
+    /// iOS 11+ delegate method (plural). Includes it for forward compatibility.
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let url = urls.first else { return }
+        handleImportedFile(at: url)
+    }
+
+    /// Common handler for imported file URL.
+    private func handleImportedFile(at url: URL) {
+
+        let pathExtension = url.pathExtension.lowercased()
+        let targets = selectedImportTargets
+        selectedImportTargets = []
+
+        if pathExtension == "json" {
+            // Import JSON
+            ImportExportManager.shared.importTexts(from: url) { [weak self] importedTasks in
+                DispatchQueue.main.async {
+                    guard let tasks = importedTasks, !tasks.isEmpty else {
+                        self?.showAlert(title: "导入失败", message: "无法解析文件内容，请确认文件格式正确")
+                        return
+                    }
+                    if targets.isEmpty {
+                        // No targets selected: create new tasks
+                        for task in tasks {
+                            TaskManager.shared.addTask(task)
+                        }
+                        self?.showAlert(title: "导入成功", message: "已导入 \(tasks.count) 个阅读任务") {
+                            self?.navigationController?.popToRootViewController(animated: true)
+                        }
+                    } else {
+                        // Add expected texts to selected targets
+                        var addedCount = 0
+                        for importedTask in tasks {
+                            for target in targets {
+                                target.expectedTexts.append(contentsOf: importedTask.expectedTexts)
+                                TaskManager.shared.updateTask(target)
+                                addedCount += importedTask.expectedTexts.count
+                            }
+                        }
+                        self?.showAlert(title: "导入成功", message: "已向 \(targets.count) 个任务添加 \(addedCount) 段文本") {
+                            self?.navigationController?.popToRootViewController(animated: true)
+                        }
+                    }
+                }
+            }
+        } else {
+            // Import plain text
+            let autoSplit = UserDefaults.standard.bool(forKey: "auto_split_by_newline_enabled")
+            ImportExportManager.shared.importTextsFromPlainText(url: url, autoSplit: autoSplit) { [weak self] importedTasks in
+                DispatchQueue.main.async {
+                    guard let tasks = importedTasks, !tasks.isEmpty else {
+                        self?.showAlert(title: "导入失败", message: "文件内容为空或无法解析")
+                        return
+                    }
+                    if targets.isEmpty {
+                        // No targets selected: create new tasks
+                        for task in tasks {
+                            TaskManager.shared.addTask(task)
+                        }
+                        self?.showAlert(title: "导入成功", message: "已导入 \(tasks.count) 个阅读任务") {
+                            self?.navigationController?.popToRootViewController(animated: true)
+                        }
+                    } else {
+                        // Add expected texts to selected targets
+                        var addedCount = 0
+                        for importedTask in tasks {
+                            for target in targets {
+                                target.expectedTexts.append(contentsOf: importedTask.expectedTexts)
+                                TaskManager.shared.updateTask(target)
+                                addedCount += importedTask.expectedTexts.count
+                            }
+                        }
+                        self?.showAlert(title: "导入成功", message: "已向 \(targets.count) 个任务添加 \(addedCount) 段文本") {
+                            self?.navigationController?.popToRootViewController(animated: true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        // User cancelled, do nothing
     }
 }
 

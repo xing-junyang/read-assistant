@@ -30,13 +30,13 @@ final class TaskManager {
     }
 
     /// Removes a task by ID, cleaning up all associated audio files.
+    /// Built-in tasks cannot be removed.
     func removeTask(withId id: String) {
+        guard let task = tasks.first(where: { $0.id == id }), !task.isBuiltIn else { return }
         // Clean up audio files for all sessions
-        if let task = tasks.first(where: { $0.id == id }) {
-            for session in task.sessions {
-                if let audioPath = session.audioFilePath {
-                    AudioRecordingManager.deleteAudioFile(at: audioPath)
-                }
+        for session in task.sessions {
+            if let audioPath = session.audioFilePath {
+                AudioRecordingManager.deleteAudioFile(at: audioPath)
             }
         }
         tasks.removeAll { $0.id == id }
@@ -44,10 +44,12 @@ final class TaskManager {
     }
 
     /// Removes tasks at given indices, cleaning up audio files.
+    /// Built-in tasks are skipped.
     func removeTasks(at indices: [Int]) {
         let ids = indices.compactMap { index -> String? in
             guard index < tasks.count else { return nil }
-            return tasks[index].id
+            let task = tasks[index]
+            return task.isBuiltIn ? nil : task.id
         }
         // Clean up audio files for all sessions in removed tasks
         for id in ids {
@@ -71,9 +73,10 @@ final class TaskManager {
         saveTasks()
     }
 
-    /// Duplicates a task.
+    /// Duplicates a task. Built-in tasks cannot be duplicated.
     func duplicateTask(withId id: String) -> ReadingTask? {
-        guard let original = tasks.first(where: { $0.id == id }) else { return nil }
+        guard let original = tasks.first(where: { $0.id == id }),
+              !original.isBuiltIn else { return nil }
         let copy = original.duplicate()
         // Insert right after the original
         if let index = tasks.firstIndex(where: { $0.id == id }) {
@@ -145,6 +148,37 @@ final class TaskManager {
         saveTasks()
     }
 
+    // MARK: - Built-in Tasks
+
+    /// Ensures all built-in tasks exist in the task list.
+    /// Called after loading saved tasks to add any missing built-in tasks.
+    private func ensureBuiltInTasks() {
+        let existingIDs = Set(tasks.map { $0.id })
+        var needsSave = false
+
+        for builtInTask in BuiltInTasks.allTasks {
+            if !existingIDs.contains(builtInTask.id) {
+                tasks.append(builtInTask)
+                needsSave = true
+            }
+        }
+
+        if needsSave {
+            tasks.sort { $0.sortOrder < $1.sortOrder }
+            saveTasks()
+        }
+    }
+
+    /// Returns whether a task can be deleted by the user.
+    func canDelete(task: ReadingTask) -> Bool {
+        return !task.isBuiltIn
+    }
+
+    /// Returns whether a task can be duplicated by the user.
+    func canDuplicate(task: ReadingTask) -> Bool {
+        return !task.isBuiltIn
+    }
+
     // MARK: - Persistence (NSKeyedArchiver - iOS 10 compatible)
 
     private func saveTasks() {
@@ -160,14 +194,17 @@ final class TaskManager {
     }
 
     private func loadTasks() {
-        guard FileManager.default.fileExists(atPath: storageURL.path) else { return }
-        do {
-            let data = try Data(contentsOf: storageURL)
-            if let loaded = NSKeyedUnarchiver.unarchiveObject(with: data) as? [ReadingTask] {
-                self.tasks = loaded.sorted { $0.sortOrder < $1.sortOrder }
+        if FileManager.default.fileExists(atPath: storageURL.path) {
+            do {
+                let data = try Data(contentsOf: storageURL)
+                if let loaded = NSKeyedUnarchiver.unarchiveObject(with: data) as? [ReadingTask] {
+                    self.tasks = loaded.sorted { $0.sortOrder < $1.sortOrder }
+                }
+            } catch {
+                print("[TaskManager] Failed to load tasks: \(error.localizedDescription)")
             }
-        } catch {
-            print("[TaskManager] Failed to load tasks: \(error.localizedDescription)")
         }
+        // Always ensure built-in tasks exist after loading
+        ensureBuiltInTasks()
     }
 }

@@ -19,6 +19,8 @@ class ReadingTask: NSObject, NSCoding {
     var sortOrder: Int
     /// Whether this task has been completed.
     var isCompleted: Bool
+    /// Whether this is a built-in task that cannot be deleted by the user.
+    var isBuiltIn: Bool
     /// Associated reading sessions.
     var sessions: [ReadingSession]
 
@@ -31,6 +33,7 @@ class ReadingTask: NSObject, NSCoding {
          modifiedAt: Date = Date(),
          sortOrder: Int = 0,
          isCompleted: Bool = false,
+         isBuiltIn: Bool = false,
          sessions: [ReadingSession] = []) {
         self.id = id
         self.title = title
@@ -40,6 +43,7 @@ class ReadingTask: NSObject, NSCoding {
         self.modifiedAt = modifiedAt
         self.sortOrder = sortOrder
         self.isCompleted = isCompleted
+        self.isBuiltIn = isBuiltIn
         self.sessions = sessions
         super.init()
     }
@@ -76,6 +80,7 @@ class ReadingTask: NSObject, NSCoding {
         static let modifiedAt = "modifiedAt"
         static let sortOrder = "sortOrder"
         static let isCompleted = "isCompleted"
+        static let isBuiltIn = "isBuiltIn"
         static let sessions = "sessions"
     }
 
@@ -88,6 +93,7 @@ class ReadingTask: NSObject, NSCoding {
         coder.encode(modifiedAt, forKey: CodingKeys.modifiedAt)
         coder.encode(sortOrder, forKey: CodingKeys.sortOrder)
         coder.encode(isCompleted, forKey: CodingKeys.isCompleted)
+        coder.encode(isBuiltIn, forKey: CodingKeys.isBuiltIn)
         coder.encode(sessions, forKey: CodingKeys.sessions)
     }
 
@@ -104,6 +110,7 @@ class ReadingTask: NSObject, NSCoding {
         self.modifiedAt = coder.decodeObject(forKey: CodingKeys.modifiedAt) as? Date ?? Date()
         self.sortOrder = coder.decodeInteger(forKey: CodingKeys.sortOrder)
         self.isCompleted = coder.decodeBool(forKey: CodingKeys.isCompleted)
+        self.isBuiltIn = coder.decodeBool(forKey: CodingKeys.isBuiltIn)
         self.sessions = coder.decodeObject(forKey: CodingKeys.sessions) as? [ReadingSession] ?? []
         super.init()
     }

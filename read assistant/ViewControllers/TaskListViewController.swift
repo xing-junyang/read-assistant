@@ -138,11 +138,13 @@ extension TaskListViewController: UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        return true
+        let task = tasks[indexPath.row]
+        return !task.isBuiltIn
     }
 
     func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
-        return true
+        let task = tasks[indexPath.row]
+        return !task.isBuiltIn
     }
 
     func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
@@ -161,26 +163,33 @@ extension TaskListViewController: UITableViewDelegate {
     // MARK: - Swipe Actions (iOS 10 compatible)
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath) -> [UITableViewRowAction]? {
         let task = tasks[indexPath.row]
+        var actions: [UITableViewRowAction] = []
 
-        let deleteAction = UITableViewRowAction(style: .destructive, title: "删除") { [weak self] _, index in
-            self?.deleteTask(at: index)
-        }
+        if !task.isBuiltIn {
+            let deleteAction = UITableViewRowAction(style: .destructive, title: "删除") { [weak self] _, index in
+                self?.deleteTask(at: index)
+            }
+            actions.append(deleteAction)
 
-        let duplicateAction = UITableViewRowAction(style: .normal, title: "复制") { [weak self] _, index in
-            self?.duplicateTask(at: index)
+            let duplicateAction = UITableViewRowAction(style: .normal, title: "复制") { [weak self] _, index in
+                self?.duplicateTask(at: index)
+            }
+            duplicateAction.backgroundColor = .primary
+            actions.append(duplicateAction)
         }
-        duplicateAction.backgroundColor = .primary
 
         let editAction = UITableViewRowAction(style: .normal, title: "编辑") { [weak self] _, index in
             self?.editTask(at: index)
         }
         editAction.backgroundColor = .accent
+        actions.append(editAction)
 
-        return [deleteAction, duplicateAction, editAction]
+        return actions.isEmpty ? nil : actions
     }
 
     private func deleteTask(at indexPath: IndexPath) {
         let task = tasks[indexPath.row]
+        guard !task.isBuiltIn else { return }
         showConfirm(title: "删除任务", message: "确定要删除「\(task.title)」吗？此操作不可撤销。") { [weak self] in
             TaskManager.shared.removeTask(withId: task.id)
             self?.tableView.reloadData()
@@ -190,6 +199,7 @@ extension TaskListViewController: UITableViewDelegate {
 
     private func duplicateTask(at indexPath: IndexPath) {
         let task = tasks[indexPath.row]
+        guard !task.isBuiltIn else { return }
         _ = TaskManager.shared.duplicateTask(withId: task.id)
         tableView.reloadData()
         updateEmptyState()
