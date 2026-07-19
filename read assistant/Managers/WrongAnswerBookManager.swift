@@ -238,6 +238,7 @@ final class WrongAnswerBookManager {
                 ))
             } else {
                 // 看拼音选字: show pinyin, choose correct character(s)
+                // CRITICAL: distractors must NOT share the same pinyin as the correct answer
                 var distractors: [String] = []
                 if charCount == 1 {
                     distractors = generateCharacterDistractors(for: correctText, correctPinyin: correctPinyin)
@@ -245,18 +246,36 @@ final class WrongAnswerBookManager {
                     distractors = generateMultiCharWordDistractors(for: correctText, correctPinyin: correctPinyin, charCount: charCount)
                 }
 
+                // Filter out any distractor that has the same pinyin as the correct answer
+                distractors = distractors.filter { d in
+                    normalizePinyin(pinyin(of: d)) != correctPinyin
+                }
+
                 while distractors.count < 3 {
                     if let randomWord = getRandomWord(length: charCount) {
-                        distractors.append(randomWord)
-                    } else if let randomChar = getRandomChineseChar() {
-                        distractors.append(randomChar)
+                        if normalizePinyin(pinyin(of: randomWord)) != correctPinyin {
+                            distractors.append(randomWord)
+                            continue
+                        }
                     }
+                    // Fallback: random char, verify pinyin uniqueness
+                    for _ in 0..<20 {
+                        if let randomChar = getRandomChineseChar() {
+                            if normalizePinyin(pinyin(of: randomChar)) != correctPinyin {
+                                distractors.append(randomChar)
+                                break
+                            }
+                        }
+                    }
+                    break  // Avoid infinite loop
                 }
                 distractors = Array(distractors.prefix(3))
 
                 // Deduplicate and ensure correct answer is unique
                 var options = Array(Set(distractors + [correctText]))
                 options.removeAll { $0 == correctText }
+                // Double-check: remove any remaining same-pinyin distractors
+                options.removeAll { $0 != correctText && normalizePinyin(pinyin(of: $0)) == correctPinyin }
                 options = Array(options.prefix(3)) + [correctText]
                 options.shuffle()
                 guard let correctIndex = options.firstIndex(of: correctText), options.count == 4 else { continue }
@@ -324,38 +343,222 @@ final class WrongAnswerBookManager {
 
     // MARK: - Pinyin Distractor Generation (Multi-Syllable)
 
-    /// Generates multi-syllable pinyin distractors that all have the same syllable count.
+    /// Generates multi-syllable pinyin distractors with strong phonetic interference.
+    /// All distractors share structural similarity (same syllable count, partial syllable overlap).
     private func generateMultiSyllablePinyinDistractors(for pinyin: String, syllableCount: Int) -> [String] {
         var distractors: Set<String> = []
         let syllables = splitIntoSyllables(pinyin)
 
-        // Strategy: replace one syllable with a similar-sounding one
+        // Strategy 1: Replace one syllable with a similar-sounding one (strongest distractor)
         for pos in 0..<syllables.count {
             let originalSyl = syllables[pos]
-            let similarSyls = generatePinyinDistractors(for: originalSyl)
-            for alt in similarSyls.prefix(2) {
+            // Get strong phonetic neighbors for this syllable
+            let neighbors = generateStrongPhoneticNeighbors(for: originalSyl)
+            for alt in neighbors.prefix(3) where alt != originalSyl {
                 var newSyllables = syllables
                 newSyllables[pos] = alt
                 let candidate = newSyllables.joined()
-                if candidate != pinyin && distractors.count < 4 {
+                if candidate != pinyin {
                     distractors.insert(candidate)
                 }
             }
         }
 
-        // Strategy: generate random multi-syllable combos
-        while distractors.count < 3 {
-            var parts: [String] = []
-            for _ in 0..<syllableCount {
-                parts.append(generateRandomPinyin(length: 1))
+        // Strategy 2: Swap two syllables (e.g., "putao" → "taopu") — subtle but confusing
+        if syllables.count >= 2 && distractors.count < 3 {
+            for i in 0..<(syllables.count - 1) {
+                for j in (i + 1)..<syllables.count where syllables[i] != syllables[j] {
+                    var swapped = syllables
+                    swapped.swapAt(i, j)
+                    let candidate = swapped.joined()
+                    if candidate != pinyin {
+                        distractors.insert(candidate)
+                    }
+                }
             }
-            let candidate = parts.joined()
-            if candidate != pinyin {
-                distractors.insert(candidate)
+        }
+
+        // Strategy 3: Keep first syllable, replace rest with plausible continuations
+        if syllables.count >= 2 && distractors.count < 3 {
+            let first = syllables[0]
+            let commonContinuations = getCommonSyllableContinuations(for: first)
+            for cont in commonContinuations.shuffled().prefix(4) {
+                let candidate = first + cont
+                if candidate.count == pinyin.count && candidate != pinyin {
+                    distractors.insert(candidate)
+                }
+            }
+        }
+
+        // Strategy 4: Same-initial pattern — change finals but keep initials (mimics native speaker confusion)
+        if distractors.count < 3 {
+            let initials = syllables.compactMap { splitPinyin($0)?.initial }
+            for _ in 0..<8 {
+                var newSyllables: [String] = []
+                for init_ in initials {
+                    let finals = getRandomFinals(excluding: "")
+                    if let final = finals.randomElement() {
+                        newSyllables.append(init_ + final)
+                    }
+                }
+                if newSyllables.count == syllables.count {
+                    let candidate = newSyllables.joined()
+                    if candidate != pinyin && candidate.count == pinyin.count {
+                        distractors.insert(candidate)
+                    }
+                }
+                if distractors.count >= 3 { break }
+            }
+        }
+
+        // Strategy 5: Same-final pattern — change initials but keep finals
+        if distractors.count < 3 {
+            let finals = syllables.compactMap { splitPinyin($0)?.final }
+            for _ in 0..<8 {
+                var newSyllables: [String] = []
+                for final in finals {
+                    let initials = getRandomInitials(excluding: "")
+                    if let init_ = initials.randomElement() {
+                        newSyllables.append(init_ + final)
+                    }
+                }
+                if newSyllables.count == syllables.count {
+                    let candidate = newSyllables.joined()
+                    if candidate != pinyin && candidate.count == pinyin.count {
+                        distractors.insert(candidate)
+                    }
+                }
+                if distractors.count >= 3 { break }
             }
         }
 
         return Array(distractors)
+    }
+
+    /// Generates strong single-syllable phonetic neighbors (same initial or same final).
+    private func generateStrongPhoneticNeighbors(for syllable: String) -> [String] {
+        var result: [String] = []
+        guard let (initial, final) = splitPinyin(syllable) else { return [syllable] }
+
+        // Same final, different initial (confusing: "ban" vs "pan")
+        let similarInitials = getSimilarInitials(initial)
+        for init_ in similarInitials {
+            result.append(init_ + final)
+        }
+
+        // Same initial, different final (confusing: "ban" vs "bang")
+        let similarFinals = getSimilarFinals(final)
+        for fin in similarFinals {
+            result.append(initial + fin)
+        }
+
+        // Near-homophone initials (zh/z, ch/c, sh/s)
+        let nearInitials = getNearHomophoneInitials(initial)
+        for init_ in nearInitials {
+            result.append(init_ + final)
+        }
+
+        // Near-homophone finals (an/ang, en/eng, in/ing)
+        let nearFinals = getNearHomophoneFinals(final)
+        for fin in nearFinals {
+            result.append(initial + fin)
+        }
+
+        return result
+    }
+
+    /// Returns initials with similar articulation.
+    private func getSimilarInitials(_ initial: String) -> [String] {
+        let map: [String: [String]] = [
+            "b": ["p", "m"], "p": ["b", "m"], "m": ["b", "p"],
+            "d": ["t", "n", "l"], "t": ["d", "n", "l"], "n": ["d", "t", "l"], "l": ["d", "t", "n", "r"],
+            "g": ["k", "h"], "k": ["g", "h"], "h": ["g", "k"],
+            "j": ["q", "x"], "q": ["j", "x"], "x": ["j", "q"],
+            "zh": ["ch", "sh"], "ch": ["zh", "sh"], "sh": ["zh", "ch", "r"], "r": ["sh", "l"],
+            "z": ["c", "s"], "c": ["z", "s"], "s": ["z", "c"],
+            "f": ["h"],
+            "y": ["w"], "w": ["y"],
+            "": ["y", "w"]
+        ]
+        return map[initial] ?? []
+    }
+
+    /// Returns near-homophone initials (zh↔z, ch↔c, sh↔s, n↔l, r↔l).
+    private func getNearHomophoneInitials(_ initial: String) -> [String] {
+        let map: [String: [String]] = [
+            "zh": ["z", "j"], "z": ["zh", "j"],
+            "ch": ["c", "q"], "c": ["ch", "q"],
+            "sh": ["s", "x"], "s": ["sh", "x"],
+            "n": ["l"], "l": ["n"],
+            "r": ["l"], "f": ["h"], "h": ["f"]
+        ]
+        return map[initial] ?? []
+    }
+
+    /// Returns near-homophone finals (an↔ang, en↔eng, in↔ing).
+    private func getNearHomophoneFinals(_ final: String) -> [String] {
+        let map: [String: [String]] = [
+            "an": ["ang"], "ang": ["an"],
+            "en": ["eng"], "eng": ["en"],
+            "in": ["ing"], "ing": ["in"],
+            "ian": ["iang"], "iang": ["ian"],
+            "uan": ["uang"], "uang": ["uan"],
+            "ai": ["ei"], "ei": ["ai"],
+            "ao": ["ou"], "ou": ["ao"]
+        ]
+        return map[final] ?? []
+    }
+
+    /// Returns common syllable continuations for a given first syllable.
+    private func getCommonSyllableContinuations(for firstSyl: String) -> [String] {
+        let commonPairs: [String: [String]] = [
+            "pu": ["tao"], "tao": ["pu"],
+            "bo": ["li", "luo", "tao"],
+            "ma": ["ma", "mao", "mi"],
+            "ji": ["qi", "jie", "xu"],
+            "xi": ["gua", "yang", "hong"],
+            "gu": ["jia", "shi", "dai"],
+            "hu": ["die", "li", "luo"],
+            "zhi": ["dao", "zhu", "hui"],
+            "chu": ["tou", "fang", "xian"],
+            "kai": ["shi", "xin", "guan"],
+            "shu": ["fu", "cai", "ji"],
+            "ying": ["tao", "xiong"],
+            "mei": ["gui", "li", "hao"],
+            "tian": ["kong", "qi", "mi"],
+            "xiao": ["xi", "niao", "mai"],
+            "da": ["jia", "hai", "lu"],
+            "fa": ["xian", "ming", "da"],
+            "ke": ["neng", "xue", "yi"],
+            "xin": ["xian", "qing"],
+            "li": ["mian", "hai", "xing"],
+            "fang": ["bian", "jian", "shi"],
+            "qing": ["chu", "tian", "nian"],
+            "shi": ["jian", "qing", "jie"],
+            "sheng": ["huo", "qi", "ming"],
+            "cheng": ["shi", "gong", "ji"],
+            "zhong": ["guo", "yao", "jian"],
+            "dong": ["xi", "tian", "wu"],
+            "nan": ["hai", "fang", "bei"],
+        ]
+        return commonPairs[firstSyl] ?? []
+    }
+
+    /// Returns random finals for distractor construction.
+    private func getRandomFinals(excluding: String) -> [String] {
+        let allFinals = ["a", "o", "e", "ai", "ei", "ao", "ou", "an", "en", "ang", "eng",
+                         "i", "ia", "ie", "iao", "iu", "ian", "in", "iang", "ing", "iong",
+                         "u", "ua", "uo", "uai", "ui", "uan", "un", "uang", "ong"]
+        return allFinals.filter { $0 != excluding }
+    }
+
+    /// Returns random initials for distractor construction.
+    private func getRandomInitials(excluding: String) -> [String] {
+        let allInitials = ["b", "p", "m", "f", "d", "t", "n", "l",
+                           "g", "k", "h", "j", "q", "x",
+                           "zh", "ch", "sh", "r", "z", "c", "s",
+                           "y", "w"]
+        return allInitials.filter { $0 != excluding }
     }
 
     /// Splits a concatenated pinyin string into individual syllables.
@@ -411,45 +614,210 @@ final class WrongAnswerBookManager {
 
     // MARK: - Multi-Character Word Distractors
 
-    /// Generates multi-character word distractors with the same character count.
+    /// Generates multi-character word distractors with strong visual and phonetic interference.
+    /// All distractors share structural similarity (same length, partial character overlap).
     private func generateMultiCharWordDistractors(for word: String, correctPinyin: String, charCount: Int) -> [String] {
         var distractors: Set<String> = []
+        let chars = Array(word)
+        let normalizedPinyin = normalizePinyin(correctPinyin)
 
-        // Strategy 1: Use other real words of the same length
-        let sameLengthWords = commonMultiCharWords.filter { $0.count == charCount && $0 != word }
-        distractors.formUnion(sameLengthWords.shuffled().prefix(4))
+        // Strategy 1 (STRONGEST): Keep N-1 characters, replace one with a similar-pinyin char
+        for i in 0..<charCount {
+            let char = String(chars[i])
+            let charPy = normalizePinyin(pinyin(of: char))
+            // Get characters with VERY similar pinyin (same syllable, different tone; or same initial)
+            let replacements = getStrongCharacterReplacements(for: char, pinyin: charPy, count: 5)
+            for alt in replacements where alt != char && alt.count == 1 {
+                var newChars = chars
+                newChars[i] = Character(alt)
+                let candidate = String(newChars)
+                if candidate != word {
+                    distractors.insert(candidate)
+                }
+            }
+        }
 
-        // Strategy 2: Replace one character with a similar-pinyin character
+        // Strategy 2: Use real words that share one character with the target
         if distractors.count < 3 {
-            for (i, char) in word.enumerated() {
-                let charPy = normalizePinyin(pinyin(of: String(char)))
-                if let similarChars = pinyinToChars[charPy] {
-                    for alt in similarChars where String(alt) != String(char) && alt.count == 1 {
-                        var chars = Array(word)
-                        chars[i] = Character(alt)
-                        let candidate = String(chars)
-                        if candidate != word && distractors.count < 3 {
-                            distractors.insert(candidate)
+            for (i, char) in chars.enumerated() {
+                let sharedChar = String(char)
+                let sameFirstWords = commonMultiCharWords.filter {
+                    $0.count == charCount && $0 != word && $0.contains(sharedChar)
+                }
+                distractors.formUnion(sameFirstWords.shuffled().prefix(2))
+                if distractors.count >= 3 { break }
+            }
+        }
+
+        // Strategy 3: Words where each character has similar pinyin pattern to original
+        if distractors.count < 3 {
+            let pinyinSyllables = splitIntoSyllables(normalizedPinyin)
+            for _ in 0..<10 {
+                var candidate = ""
+                for (idx, syl) in pinyinSyllables.enumerated() {
+                    // Get characters with same pinyin as each syllable
+                    if let homophones = pinyinToChars[syl], !homophones.isEmpty {
+                        var filtered = homophones.filter { $0.count == 1 }
+                        // Prefer different character from the original
+                        if idx < chars.count {
+                            filtered.removeAll { String($0) == String(chars[idx]) }
                         }
+                        if let pick = filtered.randomElement() {
+                            candidate += pick
+                        } else if let any = homophones.randomElement(), any.count == 1 {
+                            candidate += any
+                        }
+                    }
+                }
+                if candidate.count == charCount && candidate != word {
+                    distractors.insert(candidate)
+                }
+                if distractors.count >= 3 { break }
+            }
+        }
+
+        // Strategy 4: Near-homophone substitution — change one char to a visually similar or near-pinyin char
+        if distractors.count < 3 {
+            for i in 0..<charCount {
+                let char = String(chars[i])
+                let charPy = normalizePinyin(pinyin(of: char))
+                // Get characters with near-homophone pinyin (zh↔z, ch↔c, sh↔s, n↔l)
+                let nearChars = getNearHomophoneCharacters(for: charPy)
+                for alt in nearChars.shuffled().prefix(4) where alt != char && alt.count == 1 {
+                    var newChars = chars
+                    newChars[i] = Character(alt)
+                    let candidate = String(newChars)
+                    if candidate != word {
+                        distractors.insert(candidate)
+                    }
+                }
+                if distractors.count >= 3 { break }
+            }
+        }
+
+        // Strategy 5: Same-initial-character, different second character (or vice versa)
+        if distractors.count < 3 && charCount >= 2 {
+            // Keep first, find plausible second character
+            let firstChar = String(chars[0])
+            let firstPy = normalizePinyin(pinyin(of: firstChar))
+            if let sharingWords = findWordsStartingWith(firstChar, length: charCount) {
+                distractors.formUnion(sharingWords.shuffled().prefix(3))
+            }
+
+            // Find words with similar first-syllable
+            if distractors.count < 3, let altChars = pinyinToChars[firstPy] {
+                for alt in altChars.shuffled().prefix(3) where alt != firstChar && alt.count == 1 {
+                    let altWord = alt + String(chars.dropFirst())
+                    if altWord != word && altWord.count == charCount {
+                        distractors.insert(altWord)
                     }
                 }
             }
         }
 
-        // Strategy 3: Combine random characters of the same length
-        while distractors.count < 3 {
-            var candidate = ""
-            for _ in 0..<charCount {
-                if let rc = getRandomChineseChar() {
-                    candidate += rc
+        // Strategy 6: Real words with similar pinyin pattern (same initials or finals)
+        if distractors.count < 3 {
+            let wordSyllables = splitIntoSyllables(normalizedPinyin)
+            let wordInitials = wordSyllables.compactMap { splitPinyin($0)?.initial }
+            let wordFinals = wordSyllables.compactMap { splitPinyin($0)?.final }
+
+            for candidateWord in commonMultiCharWords.shuffled().prefix(20) {
+                guard candidateWord.count == charCount && candidateWord != word else { continue }
+                let candPinyin = normalizePinyin(pinyin(of: candidateWord))
+                let candSyllables = splitIntoSyllables(candPinyin)
+                guard candSyllables.count == wordSyllables.count else { continue }
+
+                // Count how many initials or finals match
+                var matchScore = 0
+                for idx in 0..<candSyllables.count {
+                    let candParts = splitPinyin(candSyllables[idx])
+                    if idx < wordInitials.count && candParts?.initial == wordInitials[idx] { matchScore += 1 }
+                    if idx < wordFinals.count && candParts?.final == wordFinals[idx] { matchScore += 1 }
                 }
-            }
-            if candidate != word && candidate.count == charCount {
-                distractors.insert(candidate)
+                // Only use words with partial phonetic similarity
+                if matchScore >= 1 {
+                    distractors.insert(candidateWord)
+                }
+                if distractors.count >= 3 { break }
             }
         }
 
         return Array(distractors)
+    }
+
+    /// Returns strong character replacements: same pinyin (homophones), then near-pinyin chars.
+    private func getStrongCharacterReplacements(for character: String, pinyin: String, count: Int) -> [String] {
+        var result: [String] = []
+
+        // Priority 1: Exact homophones (same pinyin, different character)
+        if let homophones = pinyinToChars[pinyin] {
+            let others = homophones.filter { $0 != character && $0.count == 1 }
+            result.append(contentsOf: others.shuffled().prefix(count))
+        }
+
+        // Priority 2: Same initial, different final → different pinyin but similar sound
+        if result.count < count, let (initial, _) = splitPinyin(pinyin) {
+            let similarFinals = getSimilarFinals("") + getNearHomophoneFinals("")
+            for final in similarFinals.shuffled().prefix(10) {
+                let altPinyin = initial + final
+                if let chars = pinyinToChars[altPinyin] {
+                    for ch in chars where ch.count == 1 && !result.contains(ch) && ch != character {
+                        result.append(ch)
+                        if result.count >= count { break }
+                    }
+                }
+                if result.count >= count { break }
+            }
+        }
+
+        // Priority 3: Same final, different initial
+        if result.count < count, let (_, final) = splitPinyin(pinyin), !final.isEmpty {
+            let similarInitials = getSimilarInitials("") + getNearHomophoneInitials("")
+            for init_ in similarInitials.shuffled().prefix(10) {
+                let altPinyin = init_ + final
+                if let chars = pinyinToChars[altPinyin] {
+                    for ch in chars where ch.count == 1 && !result.contains(ch) && ch != character {
+                        result.append(ch)
+                        if result.count >= count { break }
+                    }
+                }
+                if result.count >= count { break }
+            }
+        }
+
+        return result
+    }
+
+    /// Returns characters with near-homophone pinyin (zh↔z, ch↔c, sh↔s, n↔l territory).
+    private func getNearHomophoneCharacters(for pinyin: String) -> [String] {
+        var result: [String] = []
+        guard let (initial, final) = splitPinyin(pinyin) else { return result }
+
+        let nearInitials = getNearHomophoneInitials(initial)
+        for init_ in nearInitials {
+            let altPinyin = init_ + final
+            if let chars = pinyinToChars[altPinyin] {
+                result.append(contentsOf: chars.filter { $0.count == 1 })
+            }
+        }
+
+        let nearFinals = getNearHomophoneFinals(final)
+        for fin in nearFinals {
+            let altPinyin = initial + fin
+            if let chars = pinyinToChars[altPinyin] {
+                result.append(contentsOf: chars.filter { $0.count == 1 })
+            }
+        }
+
+        return result
+    }
+
+    /// Finds real words starting with the given character.
+    private func findWordsStartingWith(_ firstChar: String, length: Int) -> [String]? {
+        let matches = commonMultiCharWords.filter {
+            $0.count == length && $0.hasPrefix(firstChar)
+        }
+        return matches.isEmpty ? nil : matches
     }
 
     /// Returns a random word of the specified length.
@@ -570,114 +938,78 @@ final class WrongAnswerBookManager {
         var distractors: Set<String> = []
         let normalized = normalizePinyin(pinyin)
 
-        // Common pinyin syllables for distractor generation
-        let commonSyllables = [
-            "zhi", "chi", "shi", "ri", "zi", "ci", "si",
-            "yi", "wu", "yu", "ya", "ye", "yao", "you", "yan", "yin", "yang", "ying",
-            "wa", "wo", "wai", "wei", "wan", "wen", "wang", "weng",
-            "yue", "yuan", "yun", "yong",
-            "ba", "bo", "bai", "bei", "bao", "ban", "ben", "bang", "beng", "bi", "bie", "biao", "bian", "bin", "bing",
-            "pa", "po", "pai", "pei", "pao", "pou", "pan", "pen", "pang", "peng", "pi", "pie", "piao", "pian", "pin", "ping",
-            "ma", "mo", "me", "mai", "mei", "mao", "mou", "man", "men", "mang", "meng", "mi", "mie", "miao", "miu", "mian", "min", "ming",
-            "fa", "fo", "fei", "fou", "fan", "fen", "fang", "feng",
-            "da", "de", "dai", "dei", "dao", "dou", "dan", "den", "dang", "deng",
-            "di", "die", "diao", "diu", "dian", "ding",
-            "du", "duo", "dui", "duan", "dun", "dong",
-            "ta", "te", "tai", "tao", "tou", "tan", "tang", "teng",
-            "ti", "tie", "tiao", "tian", "ting",
-            "tu", "tuo", "tui", "tuan", "tun", "tong",
-            "na", "ne", "nai", "nei", "nao", "nou", "nan", "nen", "nang", "neng",
-            "ni", "nie", "niao", "niu", "nian", "nin", "niang", "ning",
-            "nu", "nuo", "nuan", "nong", "nv", "nve",
-            "la", "le", "lai", "lei", "lao", "lou", "lan", "lang", "leng",
-            "li", "lia", "lie", "liao", "liu", "lian", "lin", "liang", "ling",
-            "lu", "luo", "luan", "lun", "long", "lv", "lve",
-            "ga", "ge", "gai", "gei", "gao", "gou", "gan", "gen", "gang", "geng",
-            "gu", "gua", "guo", "guai", "gui", "guan", "gun", "guang", "gong",
-            "ka", "ke", "kai", "kei", "kao", "kou", "kan", "ken", "kang", "keng",
-            "ku", "kua", "kuo", "kuai", "kui", "kuan", "kun", "kuang", "kong",
-            "ha", "he", "hai", "hei", "hao", "hou", "han", "hen", "hang", "heng",
-            "hu", "hua", "huo", "huai", "hui", "huan", "hun", "huang", "hong",
-            "ji", "jia", "jie", "jiao", "jiu", "jian", "jin", "jiang", "jing", "jiong",
-            "ju", "jue", "juan", "jun",
-            "qi", "qia", "qie", "qiao", "qiu", "qian", "qin", "qiang", "qing", "qiong",
-            "qu", "que", "quan", "qun",
-            "xi", "xia", "xie", "xiao", "xiu", "xian", "xin", "xiang", "xing", "xiong",
-            "xu", "xue", "xuan", "xun",
-            "zha", "zhe", "zhai", "zhei", "zhao", "zhou", "zhan", "zhen", "zhang", "zheng",
-            "zhu", "zhua", "zhuo", "zhuai", "zhui", "zhuan", "zhun", "zhuang", "zhong",
-            "cha", "che", "chai", "chao", "chou", "chan", "chen", "chang", "cheng",
-            "chu", "chua", "chuo", "chuai", "chui", "chuan", "chun", "chuang", "chong",
-            "sha", "she", "shai", "shei", "shao", "shou", "shan", "shen", "shang", "sheng",
-            "shu", "shua", "shuo", "shuai", "shui", "shuan", "shun", "shuang",
-            "re", "rao", "rou", "ran", "ren", "rang", "reng",
-            "ru", "rua", "ruo", "rui", "ruan", "run", "rong",
-            "za", "ze", "zai", "zei", "zao", "zou", "zan", "zen", "zang", "zeng",
-            "zu", "zuo", "zui", "zuan", "zun", "zong",
-            "ca", "ce", "cai", "cao", "cou", "can", "cen", "cang", "ceng",
-            "cu", "cuo", "cui", "cuan", "cun", "cong",
-            "sa", "se", "sai", "sao", "sou", "san", "sen", "sang", "seng",
-            "su", "suo", "sui", "suan", "sun", "song",
-            "a", "o", "e", "ai", "ei", "ao", "ou", "an", "en", "ang", "eng", "er"
-        ]
+        guard let (initial, final) = splitPinyin(normalized) else { return [] }
 
-        // Strategy 1: Same final, different initial (e.g., "ban" -> "pan", "man", "tan")
-        let initialMap: [String: [String]] = [
-            "b": ["p", "m", "d", "t"],
-            "p": ["b", "m", "t", "d"],
-            "m": ["b", "p", "n", "l"],
-            "f": ["h", "b", "p", "w"],
-            "d": ["t", "n", "l", "b"],
-            "t": ["d", "n", "l", "p"],
-            "n": ["l", "d", "t", "m"],
-            "l": ["n", "d", "t", "r"],
-            "g": ["k", "h", "d", "b"],
-            "k": ["g", "h", "t", "p"],
-            "h": ["g", "k", "f", "sh"],
-            "j": ["q", "x", "zh", "z"],
-            "q": ["j", "x", "ch", "c"],
-            "x": ["j", "q", "sh", "s"],
-            "zh": ["ch", "sh", "z", "j"],
-            "ch": ["zh", "sh", "c", "q"],
-            "sh": ["zh", "ch", "s", "x"],
-            "r": ["l", "n", "y"],
-            "z": ["zh", "c", "s", "j"],
-            "c": ["ch", "z", "s", "q"],
-            "s": ["sh", "z", "c", "x"],
-            "y": ["w", "r", "j", "q"],
-            "w": ["y", "f", "h"],
-            "": []  // Zero-initial syllables
-        ]
-
-        // Extract initial and final from the pinyin
-        if let (initial, final) = splitPinyin(normalized) {
-            if let similarInitials = initialMap[initial] {
-                for altInitial in similarInitials {
-                    let candidate = altInitial + final
-                    if candidate != normalized && commonSyllables.contains(candidate) && distractors.count < 3 {
-                        distractors.insert(candidate)
-                    }
-                }
+        // Strategy 1: Same final, different (similar) initial — "ban" → "pan", "man"
+        let simInitials = getSimilarInitials(initial)
+        for altInit in simInitials {
+            let candidate = altInit + final
+            if isValidSyllable(candidate) && candidate != normalized {
+                distractors.insert(candidate)
             }
+        }
 
-            // Strategy 2: Same initial, similar final (e.g., "ban" -> "bang", "ben")
-            let similarFinals = getSimilarFinals(final)
-            for altFinal in similarFinals {
-                let candidate = initial + altFinal
-                if candidate != normalized && commonSyllables.contains(candidate) && distractors.count < 3 {
+        // Strategy 2: Same initial, different (similar) final — "ban" → "bang", "ben"
+        let simFinals = getSimilarFinals(final)
+        for altFinal in simFinals {
+            let candidate = initial + altFinal
+            if isValidSyllable(candidate) && candidate != normalized {
+                distractors.insert(candidate)
+            }
+        }
+
+        // Strategy 3: Near-homophone initials (zh↔z, ch↔c, sh↔s, n↔l)
+        let nearInits = getNearHomophoneInitials(initial)
+        for altInit in nearInits {
+            let candidate = altInit + final
+            if isValidSyllable(candidate) && candidate != normalized {
+                distractors.insert(candidate)
+            }
+        }
+
+        // Strategy 4: Near-homophone finals (an↔ang, en↔eng, in↔ing)
+        let nearFins = getNearHomophoneFinals(final)
+        for altFinal in nearFins {
+            let candidate = initial + altFinal
+            if isValidSyllable(candidate) && candidate != normalized {
+                distractors.insert(candidate)
+            }
+        }
+
+        // Strategy 5: Structured fill — use same-initial-different-final with common finals
+        if distractors.count < 3 {
+            let allFinals = ["a", "o", "e", "ai", "ei", "ao", "ou", "an", "en", "ang", "eng",
+                             "i", "ia", "ie", "iao", "iu", "ian", "in", "iang", "ing", "iong",
+                             "u", "ua", "uo", "uai", "ui", "uan", "un", "uang", "ong"]
+            for fin in allFinals.shuffled() where fin != final {
+                let candidate = initial + fin
+                if isValidSyllable(candidate) && candidate != normalized {
                     distractors.insert(candidate)
+                    if distractors.count >= 3 { break }
                 }
             }
         }
 
-        // Strategy 3: If still not enough, add random common syllables
-        while distractors.count < 3 {
-            if let random = commonSyllables.randomElement(), random != normalized {
-                distractors.insert(random)
+        // Strategy 6: If still not enough, use all-initial swap with same final
+        if distractors.count < 3 {
+            let allInitials = ["b", "p", "m", "f", "d", "t", "n", "l",
+                               "g", "k", "h", "j", "q", "x",
+                               "zh", "ch", "sh", "r", "z", "c", "s", "y", "w"]
+            for init_ in allInitials.shuffled() where init_ != initial && !simInitials.contains(init_) {
+                let candidate = init_ + final
+                if isValidSyllable(candidate) && candidate != normalized {
+                    distractors.insert(candidate)
+                    if distractors.count >= 3 { break }
+                }
             }
         }
 
         return Array(distractors)
+    }
+
+    /// Checks if a candidate syllable is valid (exists in the pinyin-to-char database).
+    private func isValidSyllable(_ syllable: String) -> Bool {
+        return pinyinToChars[syllable] != nil
     }
 
     /// Splits a pinyin syllable into initial and final.
@@ -843,42 +1175,73 @@ final class WrongAnswerBookManager {
         var distractors: Set<String> = []
         let normalized = normalizePinyin(correctPinyin)
 
-        // Strategy 1: Same pinyin, different character (homophones)
+        // Strategy 1 (STRONGEST): Same pinyin, different character (homophones)
         if let homophones = pinyinToChars[normalized] {
-            let others = homophones.filter { $0 != character }
-            distractors.formUnion(Array(others.prefix(4)))
+            let others = homophones.filter { $0 != character && $0.count == 1 }
+            distractors.formUnion(others.shuffled().prefix(5))
         }
 
-        // Strategy 2: Similar pinyin (same final, different initial)
-        if distractors.count < 3, let (initial, final) = splitPinyin(normalized) {
-            let similarInitials = ["zh", "ch", "sh", "z", "c", "s", "j", "q", "x",
-                                    "b", "p", "m", "d", "t", "n", "l", "g", "k", "h"]
-            for altInit in similarInitials.shuffled() where altInit != initial {
+        // Strategy 2: Same final, different initial (e.g., 马 mǎ → 打 dǎ, 把 bǎ)
+        if distractors.count < 4, let (initial, final) = splitPinyin(normalized) {
+            let simInitials = getSimilarInitials(initial) + getNearHomophoneInitials(initial)
+            for altInit in simInitials.shuffled() {
                 let altPinyin = altInit + final
                 if let chars = pinyinToChars[altPinyin] {
-                    for ch in chars where ch != character && distractors.count < 3 {
+                    for ch in chars where ch != character && ch.count == 1 {
                         distractors.insert(ch)
+                        if distractors.count >= 4 { break }
                     }
                 }
-                if distractors.count >= 3 { break }
+                if distractors.count >= 4 { break }
             }
         }
 
-        // Strategy 3: Similar final
-        if distractors.count < 3, let (initial, final) = splitPinyin(normalized) {
-            let similarFinals = getSimilarFinals(final)
-            for altFinal in similarFinals {
+        // Strategy 3: Same initial, different final (e.g., 马 mǎ → 买 mǎi, 慢 màn)
+        if distractors.count < 4, let (initial, final) = splitPinyin(normalized) {
+            let simFinals = getSimilarFinals(final) + getNearHomophoneFinals(final)
+            for altFinal in simFinals.shuffled() {
                 let altPinyin = initial + altFinal
                 if let chars = pinyinToChars[altPinyin] {
-                    for ch in chars where ch != character && distractors.count < 3 {
+                    for ch in chars where ch != character && ch.count == 1 {
                         distractors.insert(ch)
+                        if distractors.count >= 4 { break }
                     }
                 }
-                if distractors.count >= 3 { break }
+                if distractors.count >= 4 { break }
             }
         }
 
-        return Array(distractors)
+        // Strategy 4: Near-homophone — zh↔z, ch↔c, sh↔s, n↔l, r↔l (e.g., 是 shì → 四 sì)
+        if distractors.count < 4, let (initial, final) = splitPinyin(normalized) {
+            let nearInits = getNearHomophoneInitials(initial)
+            for altInit in nearInits.shuffled() {
+                let altPinyin = altInit + final
+                if let chars = pinyinToChars[altPinyin] {
+                    for ch in chars where ch != character && ch.count == 1 {
+                        distractors.insert(ch)
+                        if distractors.count >= 4 { break }
+                    }
+                }
+                if distractors.count >= 4 { break }
+            }
+        }
+
+        // Strategy 5: Near-homophone finals — an↔ang, en↔eng, in↔ing
+        if distractors.count < 4, let (initial, final) = splitPinyin(normalized) {
+            let nearFins = getNearHomophoneFinals(final)
+            for altFinal in nearFins.shuffled() {
+                let altPinyin = initial + altFinal
+                if let chars = pinyinToChars[altPinyin] {
+                    for ch in chars where ch != character && ch.count == 1 {
+                        distractors.insert(ch)
+                        if distractors.count >= 4 { break }
+                    }
+                }
+                if distractors.count >= 4 { break }
+            }
+        }
+
+        return Array(distractors).shuffled()
     }
 
     /// Returns a random common Chinese character.
