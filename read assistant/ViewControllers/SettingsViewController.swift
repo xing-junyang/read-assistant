@@ -141,6 +141,9 @@ final class SettingsViewController: UIViewController {
                     UserDefaults.standard.set(newValue, forKey: "auto_split_by_newline_enabled")
                 }
             ),
+            Item(title: "查看储存空间占用", icon: "📦", accessoryType: .disclosureIndicator) { [weak self] in
+                self?.navigateToStorageUsage()
+            },
             Item(title: "关于", icon: "ℹ️", accessoryType: .disclosureIndicator) { [weak self] in
                 self?.navigateToAbout()
             }
@@ -185,6 +188,11 @@ final class SettingsViewController: UIViewController {
     private func navigateToAbout() {
         let aboutVC = AboutViewController()
         navigationController?.pushViewController(aboutVC, animated: true)
+    }
+
+    private func navigateToStorageUsage() {
+        let storageVC = StorageUsageViewController()
+        navigationController?.pushViewController(storageVC, animated: true)
     }
 
     private func navigateToDeveloperSettings() {
