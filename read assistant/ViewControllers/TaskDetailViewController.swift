@@ -42,19 +42,27 @@ final class TaskDetailViewController: UIViewController {
         super.viewWillAppear(animated)
         tableView.reloadData()
         updateStartButton()
+        updateNavigationBar()
     }
 
     // MARK: - UI Setup
     private func setupUI() {
         view.backgroundColor = .background
         title = task?.title ?? "任务详情"
+    }
 
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: "添加阅读文段",
-            style: .plain,
-            target: self,
-            action: #selector(addExpectedText)
-        )
+    private func updateNavigationBar() {
+        guard let task = task else { return }
+        if task.isBuiltIn {
+            navigationItem.rightBarButtonItem = nil
+        } else {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                title: "添加阅读文段",
+                style: .plain,
+                target: self,
+                action: #selector(addExpectedText)
+            )
+        }
     }
 
     private func setupTableView() {
@@ -602,8 +610,8 @@ extension TaskDetailViewController: UITableViewDelegate {
         case 0:
             // Overview - no action
             break
-        case 1 where !task.expectedTexts.isEmpty:
-            // Edit expected text
+        case 1 where !task.expectedTexts.isEmpty && !task.isBuiltIn:
+            // Edit expected text (only for user-created tasks)
             let text = task.expectedTexts[indexPath.row]
             let inputVC = TextInputViewController(initialText: text)
             inputVC.onSave = { [weak self] newText in
@@ -628,7 +636,8 @@ extension TaskDetailViewController: UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
         if indexPath.section == 1 {
-            return !(task?.expectedTexts.isEmpty ?? true)
+            guard let task = task else { return false }
+            return !task.expectedTexts.isEmpty && !task.isBuiltIn
         }
         if indexPath.section == 2 {
             return true // Allow deleting history sessions
@@ -658,6 +667,7 @@ extension TaskDetailViewController: UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath) -> [UITableViewRowAction]? {
         if indexPath.section == 1 {
+            guard let task = task, !task.isBuiltIn else { return nil }
             let deleteAction = UITableViewRowAction(style: .destructive, title: "删除") { [weak self] _, _ in
                 guard let self = self, let task = self.task else { return }
                 task.expectedTexts.remove(at: indexPath.row)

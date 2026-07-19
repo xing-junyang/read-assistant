@@ -31,6 +31,8 @@ final class ReadingViewController: UIViewController {
     private var sessionStartLevel: Int = 1
     /// IDs of ReadingSession objects created during this visit, so only new reads count.
     private var currentSessionIDs: Set<String> = []
+    /// Tracks how many times each paragraph has been read in this session, for reward decay.
+    private var paragraphReadCounts: [Int: Int] = [:]
 
     // Timer for duration display
     private var timer: Timer?
@@ -552,7 +554,7 @@ final class ReadingViewController: UIViewController {
             TaskManager.shared.addSession(session, toTaskId: task.id)
 
             // Award per-paragraph rewards
-            awardParagraphRewards(score: result.score)
+            awardParagraphRewards(score: result.score, paragraphIndex: currentTextIndex)
         }
 
         // Move to next text
@@ -611,7 +613,7 @@ final class ReadingViewController: UIViewController {
                 TaskManager.shared.addSession(session, toTaskId: task.id)
 
                 // Award per-paragraph rewards
-                self.awardParagraphRewards(score: result.score)
+                self.awardParagraphRewards(score: result.score, paragraphIndex: self.currentTextIndex)
             }
 
             self.setProcessing(false)
@@ -621,14 +623,64 @@ final class ReadingViewController: UIViewController {
 
     // MARK: - Per-Paragraph Rewards
 
-    /// Awards XP and coins for a single paragraph's score. Accumulates totals for the session.
-    /// - Parameter score: The paragraph score (0-100).
-    private func awardParagraphRewards(score: Double) {
+    /// Awards XP and coins for a single paragraph's score, with diminishing returns on re-reads.
+    /// Coin reward drops linearly to 0 after 5 re-reads; XP drops to 0 after 10 re-reads.
+    /// Coin reward also scales with paragraph character count: ≤20 chars → 5%, ≥100 chars → 100%.
+    /// - Parameters:
+    ///   - score: The paragraph score (0-100).
+    ///   - paragraphIndex: The index of the paragraph being read.
+    private func awardParagraphRewards(score: Double, paragraphIndex: Int) {
+        // Track read count for this paragraph
+        let readCount: Int
+        if let count = paragraphReadCounts[paragraphIndex] {
+            readCount = count + 1
+        } else {
+            readCount = 1
+        }
+        paragraphReadCounts[paragraphIndex] = readCount
+
+        // Coin decay: full at 1st read, 0 at 6th read (5 repeats)
+        let coinReReadCoefficient = max(0.0, 1.0 - Double(readCount - 1) / 5.0)
+        // XP decay: full at 1st read, 0 at 11th read (10 repeats)
+        let xpCoefficient = max(0.0, 1.0 - Double(readCount - 1) / 10.0)
+
+        // Character-count coefficient for coins: ≤20 chars → 5%, ≥100 chars → 100%
+        let expectedTexts = task?.expectedTexts ?? []
+        let charCount: Int
+        if paragraphIndex >= 0, paragraphIndex < expectedTexts.count {
+            charCount = expectedTexts[paragraphIndex].count
+        } else {
+            charCount = 0
+        }
+        let charCoefficient: Double
+        if charCount <= 20 {
+            charCoefficient = 0.05
+        } else if charCount >= 100 {
+            charCoefficient = 1.0
+        } else {
+            charCoefficient = 0.05 + (Double(charCount) - 20.0) / 80.0 * 0.95
+        }
+
+        let coinCoefficient = coinReReadCoefficient * charCoefficient
+
         let rewardManager = RewardManager.shared
         let xpResult = rewardManager.awardXP(forScore: score)
         let coinsGained = rewardManager.awardCoins(forScore: score)
-        sessionXPGained += xpResult.xpGained
-        sessionCoinsGained += coinsGained
+
+        let effectiveXP = Int(Double(xpResult.xpGained) * xpCoefficient)
+        let effectiveCoins = Int(Double(coinsGained) * coinCoefficient)
+
+        // Adjust: awardXP/awardCoins already added full amount, so we need to
+        // refund the difference since we want scaled amounts.
+        if effectiveXP != xpResult.xpGained {
+            rewardManager.totalXP -= (xpResult.xpGained - effectiveXP)
+        }
+        if effectiveCoins != coinsGained {
+            rewardManager.coins -= (coinsGained - effectiveCoins)
+        }
+
+        sessionXPGained += effectiveXP
+        sessionCoinsGained += effectiveCoins
     }
 
     private func showAggregateResults() {
@@ -686,6 +738,7 @@ final class ReadingViewController: UIViewController {
                 self.sessionXPGained = 0
                 self.sessionCoinsGained = 0
                 self.currentSessionIDs = []
+                self.paragraphReadCounts = [:]
                 self.updateContentForCurrentIndex()
                 self.recordButton.setTitle("🎤 开始录音", for: .normal)
                 self.recordButton.backgroundColor = .errorRed
@@ -964,7 +1017,7 @@ extension ReadingViewController: SpeechRecognitionServiceDelegate {
 
             // Award per-paragraph rewards
             if let result = session.result {
-                awardParagraphRewards(score: result.score)
+                awardParagraphRewards(score: result.score, paragraphIndex: currentTextIndex)
             }
         }
         
