@@ -12,11 +12,13 @@ final class DeveloperSettingsViewController: UIViewController {
     private enum Section: Int, CaseIterable {
         case api
         case rewards
+        case quiz
 
         var title: String {
             switch self {
             case .api: return "API 配置"
             case .rewards: return "奖励数据调试"
+            case .quiz: return "闯关数据调试"
             }
         }
     }
@@ -63,6 +65,18 @@ final class DeveloperSettingsViewController: UIViewController {
             case .addInventoryItem: return "添加库存物品"
             case .clearInventory: return "清空库存"
             case .resetAllRewards: return "重置所有奖励数据"
+            }
+        }
+    }
+
+    private enum QuizRow: Int, CaseIterable {
+        case setLevel
+        case resetLevels
+
+        var title: String {
+            switch self {
+            case .setLevel: return "设置闯关数"
+            case .resetLevels: return "重置闯关数（归零）"
             }
         }
     }
@@ -183,6 +197,8 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             return Row.allCases.count
         case .rewards:
             return RewardRow.allCases.count
+        case .quiz:
+            return QuizRow.allCases.count
         }
     }
 
@@ -205,6 +221,8 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             configureAPICell(cell, at: indexPath)
         case .rewards:
             configureRewardCell(cell, at: indexPath)
+        case .quiz:
+            configureQuizCell(cell, at: indexPath)
         }
 
         return cell
@@ -281,6 +299,8 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             return "此处配置将覆盖默认值。优先级：开发者设置 > 默认值。"
         case .rewards:
             return "调试用：可直接修改奖励数据，方便测试各功能。"
+        case .quiz:
+            return "调试用：可设置或重置闯关进度。"
         }
     }
 }
@@ -298,6 +318,9 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
         case .rewards:
             guard let row = RewardRow(rawValue: indexPath.row) else { return }
             handleRewardAction(for: row)
+        case .quiz:
+            guard let row = QuizRow(rawValue: indexPath.row) else { return }
+            handleQuizAction(for: row)
         }
     }
     
@@ -351,6 +374,52 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
                 manager.checkInRecords = []
                 self?.tableView.reloadData()
                 self?.showAlert(title: "完成", message: "所有奖励数据已重置")
+            }
+        }
+    }
+
+    // MARK: - Quiz Debug Actions
+
+    private func configureQuizCell(_ cell: UITableViewCell, at indexPath: IndexPath) {
+        guard let row = QuizRow(rawValue: indexPath.row) else { return }
+        let manager = WrongAnswerBookManager.shared
+
+        cell.textLabel?.text = row.title
+        cell.textLabel?.font = UIFont.systemFont(ofSize: 16)
+        cell.textLabel?.textColor = .textPrimary
+        cell.detailTextLabel?.font = UIFont.systemFont(ofSize: 12)
+
+        switch row {
+        case .setLevel:
+            cell.detailTextLabel?.text = "当前: \(manager.totalLevelsCompleted) 关"
+            cell.detailTextLabel?.textColor = .textSecondary
+        case .resetLevels:
+            cell.detailTextLabel?.text = "⚠️ 当前: \(manager.totalLevelsCompleted) 关，重置后不可恢复"
+            cell.detailTextLabel?.textColor = .errorRed
+        }
+
+        cell.accessoryType = .disclosureIndicator
+        cell.backgroundColor = .cardBackground
+    }
+
+    private func handleQuizAction(for row: QuizRow) {
+        let manager = WrongAnswerBookManager.shared
+        switch row {
+        case .setLevel:
+            showNumberInput(title: "设置闯关数", message: "当前: \(manager.totalLevelsCompleted) 关", currentValue: "\(manager.totalLevelsCompleted)") { [weak self] value in
+                guard value >= 0 else {
+                    self?.showAlert(title: "错误", message: "闯关数不能为负数")
+                    return
+                }
+                manager.setTotalLevelsCompleted(value)
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "闯关数已设置为 \(value)")
+            }
+        case .resetLevels:
+            showConfirm(title: "重置闯关数", message: "确定要将闯关数归零吗？闯关记录将全部清除。") { [weak self] in
+                manager.setTotalLevelsCompleted(0)
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "闯关数已重置为 0")
             }
         }
     }

@@ -15,6 +15,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             "auto_split_by_newline_enabled": true
         ])
 
+        // Initialize wrong answer book cache from existing reading history
+        WrongAnswerBookManager.shared.syncWrongAnswers()
+
         // Initialize window (no UISceneDelegate on iOS 10)
         window = UIWindow(frame: UIScreen.main.bounds)
         window?.backgroundColor = .background
@@ -49,7 +52,22 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             tag: 1
         )
 
-        // --- Tab 3: Settings ---
+        // --- Tab 3: Study Tools (Wrong Answer Book & Quiz) ---
+        let studyVC = WordChallengeMenuViewController()
+        let studyNav = UINavigationController(rootViewController: studyVC)
+        studyNav.navigationBar.barTintColor = .cardBackground
+        studyNav.navigationBar.tintColor = .primary
+        studyNav.navigationBar.titleTextAttributes = [
+            NSAttributedString.Key.foregroundColor: UIColor.textPrimary
+        ]
+        studyNav.navigationBar.isTranslucent = false
+        studyNav.tabBarItem = UITabBarItem(
+            title: "学习",
+            image: Self.emojiIcon("📝"),
+            tag: 2
+        )
+
+        // --- Tab 4: Settings ---
         let settingsVC = SettingsViewController()
         let settingsNav = UINavigationController(rootViewController: settingsVC)
         settingsNav.navigationBar.barTintColor = .cardBackground
@@ -61,12 +79,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         settingsNav.tabBarItem = UITabBarItem(
             title: "设置",
             image: Self.emojiIcon("⚙️"),
-            tag: 2
+            tag: 3
         )
 
         // --- Tab Bar Controller ---
         let tabBarController = UITabBarController()
-        tabBarController.viewControllers = [homeNav, rewardsNav, settingsNav]
+        tabBarController.viewControllers = [homeNav, rewardsNav, studyNav, settingsNav]
         tabBarController.tabBar.barTintColor = .cardBackground
         tabBarController.tabBar.tintColor = .primary
         tabBarController.tabBar.isTranslucent = false
