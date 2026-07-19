@@ -616,62 +616,55 @@ final class ReadingViewController: UIViewController {
         let coinsGained = rewardManager.awardCoins(forScore: overallScore)
         let checkInResult = rewardManager.recordCheckIn()
 
-        // Build reward messages
-        var rewardMessages: [String] = []
-        rewardMessages.append("⚡ 经验 +\(xpResult.xpGained)")
-        if xpResult.leveledUp {
-            let title = LevelTitle.title(for: xpResult.newLevel)
-            rewardMessages.append("🎉 升级了！\(title.icon) \(title.title)")
-        }
-        if coinsGained > 0 {
-            rewardMessages.append("💰 金币 +\(coinsGained)")
-        }
-        switch checkInResult {
-        case .day3(let name):
-            rewardMessages.append("📅 签到3天奖励：\(name)")
-        case .day7(let name):
-            rewardMessages.append("📅 签到7天奖励：\(name)")
-        case .none:
-            break
-        }
-        let rewardText = rewardMessages.isEmpty ? "" : "\n\n" + rewardMessages.joined(separator: "\n")
+        let completedCount = task.sessions.count
+        let totalCount = task.expectedTexts.count
+        let newTitle = LevelTitle.title(for: xpResult.newLevel)
 
-        let message = results.isEmpty
-            ? "暂无评分数据" + rewardText
-            : "总体得分：\(Int(overallScore))%\n共完成 \(results.count) 段文本的阅读" + rewardText
-
-        let alert = UIAlertController(title: "阅读完成", message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "重新阅读", style: .default) { [weak self] _ in
-            guard let self = self else { return }
-            self.setProcessing(true)
-            // Clean up any dangling recording before resetting
-            if self.isRecording {
-                self.speechService.stopRecognition()
-                self.isRecording = false
-                self.stopTimer()
+        let settlementData = SettlementViewController.SettlementData(
+            overallScore: overallScore,
+            completedCount: completedCount,
+            totalCount: totalCount,
+            xpGained: xpResult.xpGained,
+            newLevel: xpResult.newLevel,
+            leveledUp: xpResult.leveledUp,
+            newTitle: newTitle,
+            coinsGained: coinsGained,
+            checkInResult: checkInResult,
+            totalXP: rewardManager.totalXP,
+            totalCoins: rewardManager.coins,
+            levelProgress: rewardManager.levelProgress,
+            onReread: { [weak self] in
+                guard let self = self else { return }
+                self.setProcessing(true)
+                if self.isRecording {
+                    self.speechService.stopRecognition()
+                    self.isRecording = false
+                    self.stopTimer()
+                }
+                self.currentTextIndex = 0
+                self.currentSession = nil
+                self.updateContentForCurrentIndex()
+                self.recordButton.setTitle("🎤 开始录音", for: .normal)
+                self.recordButton.backgroundColor = .errorRed
+                self.pauseButton.isEnabled = false
+                self.pauseButton.alpha = 0.5
+                self.pauseButton.setTitle("⏸ 暂停", for: .normal)
+                self.nextButton.isEnabled = false
+                self.nextButton.alpha = 0.5
+                self.timerLabel.text = "00:00"
+                self.elapsedSeconds = 0
+                self.statusLabel.text = "准备就绪"
+                self.statusLabel.textColor = .textSecondary
+                self.scrollView.setContentOffset(.zero, animated: true)
+                self.setProcessing(false)
+            },
+            onDismiss: { [weak self] in
+                self?.navigationController?.popViewController(animated: true)
             }
-            self.currentTextIndex = 0
-            self.currentSession = nil
-            self.updateContentForCurrentIndex()
-            // Reset buttons
-            self.recordButton.setTitle("🎤 开始录音", for: .normal)
-            self.recordButton.backgroundColor = .errorRed
-            self.pauseButton.isEnabled = false
-            self.pauseButton.alpha = 0.5
-            self.pauseButton.setTitle("⏸ 暂停", for: .normal)
-            self.nextButton.isEnabled = false
-            self.nextButton.alpha = 0.5
-            self.timerLabel.text = "00:00"
-            self.elapsedSeconds = 0
-            self.statusLabel.text = "准备就绪"
-            self.statusLabel.textColor = .textSecondary
-            self.scrollView.setContentOffset(.zero, animated: true)
-            self.setProcessing(false)
-        })
-        alert.addAction(UIAlertAction(title: "返回", style: .cancel) { [weak self] _ in
-            self?.navigationController?.popViewController(animated: true)
-        })
-        present(alert, animated: true)
+        )
+
+        let settlementVC = SettlementViewController(data: settlementData)
+        navigationController?.pushViewController(settlementVC, animated: true)
     }
 
     @objc private func editExpectedTextTapped() {
