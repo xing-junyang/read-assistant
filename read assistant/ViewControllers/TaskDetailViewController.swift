@@ -19,6 +19,9 @@ final class TaskDetailViewController: UIViewController {
     private var currentlyPlayingSessionId: String?
     private var playbackBarBottomConstraint: NSLayoutConstraint?
 
+    // 3D Touch previewing (iOS 10+)
+    private var previewingContext: UIViewControllerPreviewing?
+
     // MARK: - Initialization
     init(taskId: String) {
         self.taskId = taskId
@@ -36,6 +39,7 @@ final class TaskDetailViewController: UIViewController {
         setupTableView()
         setupStartButton()
         setupPlaybackBar()
+        registerFor3DTouch()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -273,6 +277,15 @@ final class TaskDetailViewController: UIViewController {
         guard let task = task, !task.expectedTexts.isEmpty else { return }
         let readingVC = ReadingViewController(taskId: task.id)
         navigationController?.pushViewController(readingVC, animated: true)
+    }
+
+    // MARK: - 3D Touch Previewing (iOS 10+)
+
+    /// Registers the table view for 3D Touch peek/pop previews.
+    /// Gracefully skips registration on devices without 3D Touch support.
+    private func registerFor3DTouch() {
+        guard traitCollection.forceTouchCapability == .available else { return }
+        previewingContext = registerForPreviewing(with: self, sourceView: tableView)
     }
 }
 
@@ -706,6 +719,144 @@ extension TaskDetailViewController: PlaybackBarViewDelegate {
     func playbackBarView(_ view: PlaybackBarView, didEncounterError error: Error) {
         showAlert(title: "播放错误", message: error.localizedDescription)
         stopPlayback()
+    }
+}
+
+// MARK: - UIViewControllerPreviewingDelegate (3D Touch Peek & Pop)
+extension TaskDetailViewController: UIViewControllerPreviewingDelegate {
+
+    /// Called when the user begins a 3D Touch press.
+    /// Returns a preview view controller for the cell under the touch location.
+    func previewingContext(_ previewingContext: UIViewControllerPreviewing,
+                           viewControllerForLocation location: CGPoint) -> UIViewController? {
+        guard let indexPath = tableView.indexPathForRow(at: location),
+              let task = task else { return nil }
+
+        // Set the source rect to the cell's frame so the untouched area blurs
+        if let cell = tableView.cellForRow(at: indexPath) {
+            previewingContext.sourceRect = cell.frame
+        }
+
+        switch indexPath.section {
+        case 1 where !task.expectedTexts.isEmpty:
+            // Preview: expected reading text
+            let text = task.expectedTexts[indexPath.row]
+            let content = PreviewViewController.PreviewContent.expectedText(
+                text: text,
+                index: indexPath.row,
+                total: task.expectedTexts.count
+            )
+            let previewVC = PreviewViewController(content: content)
+
+            // Set commit action: push to edit (user tasks) or show full text
+            previewVC.onCommit = { [weak self] in
+                guard let self = self, let task = self.task else { return }
+                if task.isBuiltIn {
+                    // Built-in tasks: just show the full text in a simple viewer
+                    let fullTextVC = TextPreviewFullViewController(text: text, title: "阅读文本")
+                    self.navigationController?.pushViewController(fullTextVC, animated: true)
+                } else {
+                    // User tasks: present edit modally (same as normal tap behavior)
+                    let inputVC = TextInputViewController(initialText: text)
+                    inputVC.onSave = { [weak self] newText in
+                        guard let self = self, let task = self.task else { return }
+                        task.expectedTexts[indexPath.row] = newText
+                        TaskManager.shared.updateTask(task)
+                        self.tableView.reloadData()
+                    }
+                    let nav = UINavigationController(rootViewController: inputVC)
+                    self.present(nav, animated: true)
+                }
+            }
+
+            return previewVC
+
+        case 2:
+            // Preview: historical reading session
+            let session = task.sessions[indexPath.row]
+            let expectedText = session.expectedTextIndex < task.expectedTexts.count
+                ? task.expectedTexts[session.expectedTextIndex]
+                : nil
+            let content = PreviewViewController.PreviewContent.sessionResult(
+                session: session,
+                expectedText: expectedText
+            )
+            let previewVC = PreviewViewController(content: content)
+
+            // Set commit action: push to result view if available
+            previewVC.onCommit = { [weak self] in
+                guard let self = self, let task = self.task,
+                      indexPath.row < task.sessions.count else { return }
+                let session = task.sessions[indexPath.row]
+                if let result = session.result {
+                    let resultVC = ResultViewController(result: result)
+                    self.navigationController?.pushViewController(resultVC, animated: true)
+                }
+            }
+
+            return previewVC
+
+        default:
+            return nil
+        }
+    }
+
+    /// Called when the user presses deeper (pop).
+    /// Executes the commit action to navigate to the full view.
+    func previewingContext(_ previewingContext: UIViewControllerPreviewing,
+                           commit viewControllerToCommit: UIViewController) {
+        guard let previewVC = viewControllerToCommit as? PreviewViewController else { return }
+        previewVC.onCommit?()
+    }
+}
+
+// MARK: - Full Text Preview View Controller (for built-in task text viewing)
+/// A simple view controller to display full text content.
+/// Used when 3D Touch commits on a built-in task's expected text.
+final class TextPreviewFullViewController: UIViewController {
+
+    private let displayText: String
+    private let navTitle: String
+
+    init(text: String, title: String) {
+        self.displayText = text
+        self.navTitle = title
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .background
+        self.title = navTitle
+
+        let scrollView = UIScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
+
+        let label = UILabel()
+        label.text = displayText
+        label.font = UIFont.systemFont(ofSize: 16)
+        label.textColor = .textPrimary
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: compatSafeAreaTop, constant: 16),
+            scrollView.bottomAnchor.constraint(equalTo: compatSafeAreaBottom, constant: -16),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+
+            label.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            label.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            label.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            label.widthAnchor.constraint(equalTo: scrollView.widthAnchor)
+        ])
     }
 }
 
