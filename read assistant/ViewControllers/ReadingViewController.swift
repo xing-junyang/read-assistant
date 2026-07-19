@@ -24,6 +24,12 @@ final class ReadingViewController: UIViewController {
     /// Prevents duplicate taps during long operations (stopRecording, scoring, next, finish).
     private var isProcessing = false
 
+    /// Cumulative XP and coins earned during this reading session (per-paragraph rewards).
+    private var sessionXPGained: Int = 0
+    private var sessionCoinsGained: Int = 0
+    /// Level at the start of this session, used to detect level-ups.
+    private var sessionStartLevel: Int = 1
+
     // Timer for duration display
     private var timer: Timer?
     private var elapsedSeconds: Int = 0
@@ -95,6 +101,7 @@ final class ReadingViewController: UIViewController {
     // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
+        sessionStartLevel = RewardManager.shared.currentLevel
         setupUI()
         setupSpeechService()
         updateContentForCurrentIndex()
@@ -540,6 +547,9 @@ final class ReadingViewController: UIViewController {
             session.recognizedText = actual
             session.endTime = Date()
             TaskManager.shared.addSession(session, toTaskId: task.id)
+
+            // Award per-paragraph rewards
+            awardParagraphRewards(score: result.score)
         }
 
         // Move to next text
@@ -596,11 +606,26 @@ final class ReadingViewController: UIViewController {
                 session.recognizedText = actual
                 session.endTime = Date()
                 TaskManager.shared.addSession(session, toTaskId: task.id)
+
+                // Award per-paragraph rewards
+                self.awardParagraphRewards(score: result.score)
             }
 
             self.setProcessing(false)
             self.showAggregateResults()
         }
+    }
+
+    // MARK: - Per-Paragraph Rewards
+
+    /// Awards XP and coins for a single paragraph's score. Accumulates totals for the session.
+    /// - Parameter score: The paragraph score (0-100).
+    private func awardParagraphRewards(score: Double) {
+        let rewardManager = RewardManager.shared
+        let xpResult = rewardManager.awardXP(forScore: score)
+        let coinsGained = rewardManager.awardCoins(forScore: score)
+        sessionXPGained += xpResult.xpGained
+        sessionCoinsGained += coinsGained
     }
 
     private func showAggregateResults() {
@@ -610,23 +635,28 @@ final class ReadingViewController: UIViewController {
         let results = task.sessions.compactMap { $0.result }
         let overallScore = scoringService.aggregateScore(from: results)
 
-        // --- Award XP and Coins ---
+        // Record check-in for today (once per reading session)
         let rewardManager = RewardManager.shared
-        let xpResult = rewardManager.awardXP(forScore: overallScore)
-        let coinsGained = rewardManager.awardCoins(forScore: overallScore)
         let checkInResult = rewardManager.recordCheckIn()
 
         let completedCount = task.sessions.count
         let totalCount = task.expectedTexts.count
-        let newTitle = LevelTitle.title(for: xpResult.newLevel)
+        let newTitle = LevelTitle.title(for: rewardManager.currentLevel)
+
+        // Capture accumulated per-paragraph values, then reset for next session
+        let xpGained = sessionXPGained
+        let coinsGained = sessionCoinsGained
+        let leveledUp = rewardManager.currentLevel > sessionStartLevel
+        sessionXPGained = 0
+        sessionCoinsGained = 0
 
         let settlementData = SettlementViewController.SettlementData(
             overallScore: overallScore,
             completedCount: completedCount,
             totalCount: totalCount,
-            xpGained: xpResult.xpGained,
-            newLevel: xpResult.newLevel,
-            leveledUp: xpResult.leveledUp,
+            xpGained: xpGained,
+            newLevel: rewardManager.currentLevel,
+            leveledUp: leveledUp,
             newTitle: newTitle,
             coinsGained: coinsGained,
             checkInResult: checkInResult,
@@ -643,6 +673,9 @@ final class ReadingViewController: UIViewController {
                 }
                 self.currentTextIndex = 0
                 self.currentSession = nil
+                self.sessionStartLevel = RewardManager.shared.currentLevel
+                self.sessionXPGained = 0
+                self.sessionCoinsGained = 0
                 self.updateContentForCurrentIndex()
                 self.recordButton.setTitle("🎤 开始录音", for: .normal)
                 self.recordButton.backgroundColor = .errorRed
@@ -918,6 +951,11 @@ extension ReadingViewController: SpeechRecognitionServiceDelegate {
             session.recognizedText = actual
             session.endTime = Date()
             TaskManager.shared.addSession(session, toTaskId: task.id)
+
+            // Award per-paragraph rewards
+            if let result = session.result {
+                awardParagraphRewards(score: result.score)
+            }
         }
         
         // Move to next text

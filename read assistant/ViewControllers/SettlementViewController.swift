@@ -234,7 +234,7 @@ final class SettlementViewController: UIViewController {
         let card = createCard()
 
         let headerLabel = UILabel()
-        headerLabel.text = "🪙 金币"
+        headerLabel.text = "💰 金币"
         headerLabel.font = UIFont.systemFont(ofSize: 16, weight: .bold)
         headerLabel.textColor = .textPrimary
         headerLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -242,14 +242,14 @@ final class SettlementViewController: UIViewController {
         let gainedRow = createInfoRow(
             icon: "⬆️",
             label: "本次获得",
-            value: "+\(data.coinsGained) 🪙",
+            value: "+\(data.coinsGained) 💰",
             valueColor: .accent
         )
 
         let totalRow = createInfoRow(
             icon: "💰",
             label: "当前金币",
-            value: "🪙 \(data.totalCoins)",
+            value: "💰 \(data.totalCoins)",
             valueColor: .textSecondary
         )
 
