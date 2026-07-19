@@ -10,6 +10,7 @@ final class QuizViewController: UIViewController {
     private let questions: [QuizQuestion]
     private var currentIndex = 0
     private var selectedAnswerIndex: Int? = nil
+    private let isSmallScreen = UIScreen.main.bounds.height <= 667  // iPhone SE, 6, 7, 8
 
     // MARK: - Subviews
     private let progressBar = UIProgressView(progressViewStyle: .bar)
@@ -97,28 +98,40 @@ final class QuizViewController: UIViewController {
         pinyinLabel.translatesAutoresizingMaskIntoConstraints = false
         questionContentView.addSubview(pinyinLabel)
 
-        // Options stack
+        // Options stack - vertical container holding 2 horizontal rows (2x2 grid)
         optionsStack.axis = .vertical
         optionsStack.spacing = 12
         optionsStack.distribution = .fillEqually
         optionsStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(optionsStack)
 
-        // Create 4 option buttons
-        for i in 0..<4 {
-            let button = UIButton(type: .system)
-            button.backgroundColor = defaultOptionColor
-            button.setTitleColor(.textPrimary, for: .normal)
-            button.titleLabel?.font = UIFont.systemFont(ofSize: 20, weight: .medium)
-            button.layer.cornerRadius = 10
-            button.layer.borderWidth = 2
-            button.layer.borderColor = UIColor.separator.cgColor
-            button.tag = i
-            button.addTarget(self, action: #selector(optionTapped(_:)), for: .touchUpInside)
-            button.translatesAutoresizingMaskIntoConstraints = false
-            button.heightAnchor.constraint(equalToConstant: 56).isActive = true
-            optionButtons.append(button)
-            optionsStack.addArrangedSubview(button)
+        // Create 2x2 grid: 2 rows, each with 2 buttons
+        let buttonFontSize: CGFloat = isSmallScreen ? 17 : 20
+        let buttonHeight: CGFloat = isSmallScreen ? 48 : 56
+
+        for rowIndex in 0..<2 {
+            let rowStack = UIStackView()
+            rowStack.axis = .horizontal
+            rowStack.spacing = 12
+            rowStack.distribution = .fillEqually
+            optionsStack.addArrangedSubview(rowStack)
+
+            for colIndex in 0..<2 {
+                let i = rowIndex * 2 + colIndex
+                let button = UIButton(type: .system)
+                button.backgroundColor = defaultOptionColor
+                button.setTitleColor(.textPrimary, for: .normal)
+                button.titleLabel?.font = UIFont.systemFont(ofSize: buttonFontSize, weight: .medium)
+                button.layer.cornerRadius = 10
+                button.layer.borderWidth = 2
+                button.layer.borderColor = UIColor.separator.cgColor
+                button.tag = i
+                button.addTarget(self, action: #selector(optionTapped(_:)), for: .touchUpInside)
+                button.translatesAutoresizingMaskIntoConstraints = false
+                button.heightAnchor.constraint(equalToConstant: buttonHeight).isActive = true
+                optionButtons.append(button)
+                rowStack.addArrangedSubview(button)
+            }
         }
 
         // Next / Finish button
@@ -133,6 +146,12 @@ final class QuizViewController: UIViewController {
         view.addSubview(nextButton)
 
         // Layout
+        let cardMinHeight: CGFloat = isSmallScreen ? 90 : 120
+        let questionTextTopPadding: CGFloat = isSmallScreen ? 12 : 24
+        let questionTypeTopSpacing: CGFloat = isSmallScreen ? 6 : 12
+        let questionCardTopSpacing: CGFloat = isSmallScreen ? 8 : 16
+        let optionsTopSpacing: CGFloat = isSmallScreen ? 12 : 20
+
         NSLayoutConstraint.activate([
             progressBar.topAnchor.constraint(equalTo: compatSafeAreaTop, constant: 8),
             progressBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
@@ -142,15 +161,15 @@ final class QuizViewController: UIViewController {
             progressLabel.topAnchor.constraint(equalTo: progressBar.bottomAnchor, constant: 6),
             progressLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
 
-            questionTypeLabel.topAnchor.constraint(equalTo: progressLabel.bottomAnchor, constant: 12),
+            questionTypeLabel.topAnchor.constraint(equalTo: progressLabel.bottomAnchor, constant: questionTypeTopSpacing),
             questionTypeLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
 
-            questionContentView.topAnchor.constraint(equalTo: questionTypeLabel.bottomAnchor, constant: 16),
+            questionContentView.topAnchor.constraint(equalTo: questionTypeLabel.bottomAnchor, constant: questionCardTopSpacing),
             questionContentView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             questionContentView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            questionContentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
+            questionContentView.heightAnchor.constraint(greaterThanOrEqualToConstant: cardMinHeight),
 
-            questionTextLabel.topAnchor.constraint(equalTo: questionContentView.topAnchor, constant: 24),
+            questionTextLabel.topAnchor.constraint(equalTo: questionContentView.topAnchor, constant: questionTextTopPadding),
             questionTextLabel.leadingAnchor.constraint(equalTo: questionContentView.leadingAnchor, constant: 16),
             questionTextLabel.trailingAnchor.constraint(equalTo: questionContentView.trailingAnchor, constant: -16),
 
@@ -159,7 +178,7 @@ final class QuizViewController: UIViewController {
             pinyinLabel.trailingAnchor.constraint(equalTo: questionContentView.trailingAnchor, constant: -16),
             pinyinLabel.bottomAnchor.constraint(equalTo: questionContentView.bottomAnchor, constant: -20),
 
-            optionsStack.topAnchor.constraint(equalTo: questionContentView.bottomAnchor, constant: 20),
+            optionsStack.topAnchor.constraint(equalTo: questionContentView.bottomAnchor, constant: optionsTopSpacing),
             optionsStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             optionsStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
 
@@ -197,7 +216,7 @@ final class QuizViewController: UIViewController {
             // 看字选拼音
             questionTypeLabel.text = "📖 看字选拼音"
             questionTextLabel.text = question.sourceItem.correctText
-            questionTextLabel.font = UIFont.systemFont(ofSize: 48, weight: .bold)
+            questionTextLabel.font = UIFont.systemFont(ofSize: isSmallScreen ? 36 : 48, weight: .bold)
             pinyinLabel.isHidden = false
             pinyinLabel.text = "请选择正确的拼音"
         } else {
@@ -205,7 +224,7 @@ final class QuizViewController: UIViewController {
             questionTypeLabel.text = "🔤 看拼音选字"
             // Show tone-marked pinyin as the prompt
             questionTextLabel.text = question.sourceItem.correctPinyin
-            questionTextLabel.font = UIFont.systemFont(ofSize: 36, weight: .bold)
+            questionTextLabel.font = UIFont.systemFont(ofSize: isSmallScreen ? 28 : 36, weight: .bold)
             pinyinLabel.isHidden = false
             pinyinLabel.text = "请选择正确的汉字"
         }
