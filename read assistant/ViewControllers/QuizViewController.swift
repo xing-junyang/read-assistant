@@ -281,9 +281,6 @@ final class QuizViewController: UIViewController {
         quizSession.endTime = Date()
         quizSession.isCompleted = true
 
-        // Record the session and award coins
-        WrongAnswerBookManager.shared.recordQuizSession(quizSession)
-
         let resultVC = QuizResultViewController(quizSession: quizSession, questions: questions)
         navigationController?.pushViewController(resultVC, animated: true)
     }

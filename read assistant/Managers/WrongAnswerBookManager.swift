@@ -179,25 +179,115 @@ final class WrongAnswerBookManager {
 
     // MARK: - Quiz Generation
 
-    /// Generates a quiz level by randomly selecting 10 wrong answer items
-    /// and creating questions with strong distractors.
-    /// Multi-character items get multi-character/syllable options of the same length.
+    /// Extracts meaningful Chinese words from text using tokenization.
+    /// Falls back to individual Chinese characters if no multi-character words are found.
+    private func extractMeaningfulTokens(from text: String) -> [String] {
+        var tokens: [String] = []
+
+        // Use CFStringTokenizer for Chinese word segmentation
+        let range = CFRange(location: 0, length: text.utf16.count)
+        let locale = NSLocale(localeIdentifier: "zh_CN")
+        let tokenizer = CFStringTokenizerCreate(
+            kCFAllocatorDefault,
+            text as CFString,
+            range,
+            kCFStringTokenizerUnitWord,
+            locale
+        )
+
+        var tokenType = CFStringTokenizerGoToTokenAtIndex(tokenizer, 0)
+        while tokenType != [] {
+            let tokenRange = CFStringTokenizerGetCurrentTokenRange(tokenizer)
+            let start = text.utf16.index(text.utf16.startIndex, offsetBy: tokenRange.location)
+            let end = text.utf16.index(start, offsetBy: tokenRange.length)
+            let token = String(text[start..<end])
+
+            // Only keep meaningful Chinese word tokens (2-4 characters, CJK)
+            if token.count >= 2 && token.count <= 4 && isCJKText(token) {
+                tokens.append(token)
+            }
+
+            tokenType = CFStringTokenizerAdvanceToNextToken(tokenizer)
+        }
+
+        // If no meaningful multi-char tokens found, fallback to single characters
+        if tokens.isEmpty {
+            for char in text {
+                let s = String(char)
+                if isCJKText(s) {
+                    tokens.append(s)
+                }
+            }
+        }
+
+        return tokens
+    }
+
+    /// Checks whether a string consists entirely of CJK Unified Ideographs.
+    private func isCJKText(_ text: String) -> Bool {
+        for scalar in text.unicodeScalars {
+            let v = scalar.value
+            let isCJKUnified = (v >= 0x4E00 && v <= 0x9FFF)
+            let isCJKExtA = (v >= 0x3400 && v <= 0x4DBF)
+            if !isCJKUnified && !isCJKExtA {
+                return false
+            }
+        }
+        return !text.isEmpty
+    }
+
+    /// Generates a quiz level by extracting meaningful words from wrong answer items,
+    /// then creating questions with strong distractors.
     func generateQuizLevel() -> [QuizQuestion]? {
         guard wrongAnswers.count >= 4 else { return nil }
 
-        let poolSize = min(wrongAnswers.count, 10)
-        let selected = wrongAnswers.shuffled().prefix(poolSize)
+        // Step 1: Extract meaningful tokens from all wrong answer items
+        var allTokens: [(token: String, sourceItem: WrongAnswerItem)] = []
+        for item in wrongAnswers {
+            let tokens = extractMeaningfulTokens(from: item.correctText)
+            for token in tokens {
+                allTokens.append((token: token, sourceItem: item))
+            }
+        }
+
+        // Step 2: Deduplicate tokens (keep unique by token text)
+        var seen: Set<String> = []
+        var uniqueTokens: [(token: String, sourceItem: WrongAnswerItem)] = []
+        for entry in allTokens {
+            if !seen.contains(entry.token) {
+                seen.insert(entry.token)
+                uniqueTokens.append(entry)
+            }
+        }
+
+        // Need at least 4 unique tokens
+        guard uniqueTokens.count >= 4 else { return nil }
+
+        // Step 3: Select up to 10 tokens
+        let poolSize = min(uniqueTokens.count, 10)
+        let selected = uniqueTokens.shuffled().prefix(poolSize)
         var questions: [QuizQuestion] = []
 
-        for item in selected {
-            // Expand single-char items to multi-char words ~40% of the time
-            let quizItem = expandToWord(item)
+        for entry in selected {
+            let token = entry.token
+            let sourceItem = entry.sourceItem
+
+            // Create a synthetic WrongAnswerItem for this token
+            let tokenPinyin = pinyin(of: token)
+            let quizItem = WrongAnswerItem(
+                correctText: token,
+                wrongText: nil,
+                correctPinyin: normalizePinyin(tokenPinyin),
+                wrongPinyin: nil,
+                errorType: sourceItem.errorType,
+                sessionID: sourceItem.sessionID,
+                timestamp: sourceItem.timestamp
+            )
 
             // Randomly choose question type
             let qType: QuizQuestion.QuestionType = Bool.random() ? .characterToPinyin : .pinyinToCharacter
 
             let correctText = quizItem.correctText
-            // Use tone-marked pinyin for display (CFStringTransform preserves diacritics)
             let tonedPinyin = pinyin(of: correctText)
             let correctPinyin = normalizePinyin(quizItem.correctPinyin)
             let charCount = correctText.count
@@ -862,19 +952,33 @@ final class WrongAnswerBookManager {
         "千山万水", "万紫千红", "鸟语花香", "春暖花开", "秋高气爽", "冰天雪地",
     ]
 
-    /// Records a completed quiz session.
+    /// Records a completed quiz session (adds to history only, does NOT advance level).
+    /// Automatically deduplicates by session ID.
+    /// Call `advanceLevel(coinsEarned:)` separately to mark a level as passed.
     func recordQuizSession(_ session: QuizSession) {
-        quizProgress.sessionHistory.append(session)
-        quizProgress.totalLevelsCompleted += 1
+        // Deduplicate: if a session with the same ID already exists, update it instead of appending
+        if let existingIndex = quizProgress.sessionHistory.firstIndex(where: { $0.id == session.id }) {
+            quizProgress.sessionHistory[existingIndex] = session
+        } else {
+            quizProgress.sessionHistory.append(session)
+        }
+        saveQuizProgress()
+    }
 
-        // Award coins based on level milestones
+    /// Marks the current level as passed, advances to the next level, and awards coins.
+    /// - Parameter coinsEarned: Number of coins to award (0 for basic success, 3 for complete victory).
+    func advanceLevel(coinsEarned: Int) {
+        quizProgress.totalLevelsCompleted += 1
+        if coinsEarned > 0 {
+            RewardManager.shared.coins += coinsEarned
+        }
+
+        // Milestone bonuses still apply (every 10/100 levels)
         let level = quizProgress.totalLevelsCompleted
         if level % 10 == 0 {
-            // Every 10 levels: 20 coins
             RewardManager.shared.coins += 20
         }
         if level % 100 == 0 {
-            // Every 100 levels: 50 coins (cumulative with the 10-level reward)
             RewardManager.shared.coins += 50
         }
 

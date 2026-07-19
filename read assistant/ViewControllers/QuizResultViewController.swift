@@ -7,6 +7,7 @@ final class QuizResultViewController: UIViewController {
     // MARK: - Properties
     private let quizSession: QuizSession
     private let questions: [QuizQuestion]
+    private var levelPassed = false
 
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
@@ -25,6 +26,29 @@ final class QuizResultViewController: UIViewController {
     // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        // Process result: advance level and award coins based on score tier
+        let tier = quizSession.resultTier
+
+        if tier == .completeVictory {
+            // >= 90%: Complete victory — 3 coins, advance level
+            WrongAnswerBookManager.shared.advanceLevel(coinsEarned: 3)
+            quizSession.coinsEarned = 3
+            levelPassed = true
+        } else if tier == .success {
+            // >= 60%: Success — no coins, advance level
+            WrongAnswerBookManager.shared.advanceLevel(coinsEarned: 0)
+            quizSession.coinsEarned = 0
+            levelPassed = true
+        } else {
+            // < 60%: Failure — no advance, no coins
+            quizSession.coinsEarned = -1  // Lost 1 coin to play
+            levelPassed = false
+        }
+
+        // Update the session in history with coin info
+        WrongAnswerBookManager.shared.recordQuizSession(quizSession)
+
         setupUI()
     }
 
@@ -96,21 +120,36 @@ final class QuizResultViewController: UIViewController {
             }
         }
 
-        // Action buttons
+        // Action buttons — behavior depends on result tier
         let buttonsStack = UIStackView()
         buttonsStack.axis = .horizontal
         buttonsStack.spacing = 12
         buttonsStack.distribution = .fillEqually
         buttonsStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let continueButton = UIButton(type: .system)
-        continueButton.setTitle("继续闯关", for: .normal)
-        continueButton.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
-        continueButton.backgroundColor = .primary
-        continueButton.setTitleColor(.white, for: .normal)
-        continueButton.layer.cornerRadius = 10
-        continueButton.addTarget(self, action: #selector(continueTapped), for: .touchUpInside)
-        buttonsStack.addArrangedSubview(continueButton)
+        let tier = quizSession.resultTier
+
+        if tier == .failure {
+            // Failure: show "重新挑战" button
+            let retryButton = UIButton(type: .system)
+            retryButton.setTitle("重新挑战 (-1💰)", for: .normal)
+            retryButton.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+            retryButton.backgroundColor = .warningOrange
+            retryButton.setTitleColor(.white, for: .normal)
+            retryButton.layer.cornerRadius = 10
+            retryButton.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
+            buttonsStack.addArrangedSubview(retryButton)
+        } else {
+            // Success or complete victory: show "继续闯关" button
+            let continueButton = UIButton(type: .system)
+            continueButton.setTitle("继续闯关 (-1💰)", for: .normal)
+            continueButton.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+            continueButton.backgroundColor = .primary
+            continueButton.setTitleColor(.white, for: .normal)
+            continueButton.layer.cornerRadius = 10
+            continueButton.addTarget(self, action: #selector(continueTapped), for: .touchUpInside)
+            buttonsStack.addArrangedSubview(continueButton)
+        }
 
         let backButton = UIButton(type: .system)
         backButton.setTitle("返回", for: .normal)
@@ -126,7 +165,6 @@ final class QuizResultViewController: UIViewController {
         contentStack.addArrangedSubview(buttonsStack)
 
         NSLayoutConstraint.activate([
-            continueButton.heightAnchor.constraint(equalToConstant: 50),
             backButton.heightAnchor.constraint(equalToConstant: 50)
         ])
     }
@@ -141,7 +179,13 @@ final class QuizResultViewController: UIViewController {
 
         // Score circle
         let circleView = UIView()
-        circleView.backgroundColor = percentage >= 80 ? .successGreen : (percentage >= 60 ? .warningOrange : .errorRed)
+        if percentage >= 90 {
+            circleView.backgroundColor = .successGreen
+        } else if percentage >= 60 {
+            circleView.backgroundColor = .warningOrange
+        } else {
+            circleView.backgroundColor = .errorRed
+        }
         circleView.layer.cornerRadius = 50
         circleView.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(circleView)
@@ -162,16 +206,14 @@ final class QuizResultViewController: UIViewController {
         percentageLabel.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(percentageLabel)
 
-        // Emoji feedback
+        // Emoji feedback based on new scoring tiers
         let emojiLabel = UILabel()
         if percentage >= 90 {
-            emojiLabel.text = "🎉 太棒了！"
-        } else if percentage >= 70 {
-            emojiLabel.text = "👍 很不错！"
-        } else if percentage >= 50 {
-            emojiLabel.text = "💪 继续加油！"
+            emojiLabel.text = "🎉 完全胜利！获得3金币"
+        } else if percentage >= 60 {
+            emojiLabel.text = "👍 闯关成功！进入下一关"
         } else {
-            emojiLabel.text = "📚 多多练习！"
+            emojiLabel.text = "📚 闯关失败，请继续加油！"
         }
         emojiLabel.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
         emojiLabel.textColor = .textPrimary
@@ -211,28 +253,54 @@ final class QuizResultViewController: UIViewController {
         stack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(stack)
 
+        let tier = quizSession.resultTier
         let levelCompleted = WrongAnswerBookManager.shared.totalLevelsCompleted
 
+        // Result tier label
+        let resultLabel = UILabel()
+        switch tier {
+        case .completeVictory:
+            resultLabel.text = "🏆 完全胜利！第 \(quizSession.levelNumber) 关通过"
+            resultLabel.textColor = .successGreen
+        case .success:
+            resultLabel.text = "✅ 闯关成功！第 \(quizSession.levelNumber) 关通过"
+            resultLabel.textColor = .warningOrange
+        case .failure:
+            resultLabel.text = "❌ 闯关失败！第 \(quizSession.levelNumber) 关未通过"
+            resultLabel.textColor = .errorRed
+        }
+        resultLabel.font = UIFont.systemFont(ofSize: 16, weight: .bold)
+        stack.addArrangedSubview(resultLabel)
+
+        // Level display
         let levelLabel = UILabel()
-        levelLabel.text = "🏆 已完成第 \(levelCompleted) 关"
-        levelLabel.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
-        levelLabel.textColor = .textPrimary
+        levelLabel.text = "🏆 当前进度：已完成第 \(levelCompleted) 关"
+        levelLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        levelLabel.textColor = .textSecondary
         stack.addArrangedSubview(levelLabel)
 
-        // Coin reward info
+        // Coin info
         let coinInfo = UILabel()
         var coinMessages: [String] = []
-        if levelCompleted % 10 == 0 {
-            coinMessages.append("🎁 每10关奖励: +20金币")
-        }
-        if levelCompleted % 100 == 0 {
-            coinMessages.append("🎁 每100关奖励: +50金币")
-        }
-        if coinMessages.isEmpty {
-            coinInfo.text = "💰 当前金币: \(RewardManager.shared.coins)"
+        let tierCoinChange = quizSession.coinsEarned
+        if tier == .completeVictory {
+            coinMessages.append("🎁 本关奖励：+\(tierCoinChange)金币")
+        } else if tier == .failure {
+            coinMessages.append("💸 本关消耗：1金币")
         } else {
-            coinInfo.text = coinMessages.joined(separator: "\n") + "\n💰 当前金币: \(RewardManager.shared.coins)"
+            coinMessages.append("➖ 本关无金币奖励")
         }
+
+        // Milestone info
+        if levelCompleted > 0 && levelCompleted % 10 == 0 {
+            coinMessages.append("🎁 第\(levelCompleted)关里程碑奖励：+20金币")
+        }
+        if levelCompleted > 0 && levelCompleted % 100 == 0 {
+            coinMessages.append("🎁 第\(levelCompleted)关里程碑奖励：+50金币")
+        }
+
+        coinMessages.append("💰 当前金币：\(RewardManager.shared.coins)")
+        coinInfo.text = coinMessages.joined(separator: "\n")
         coinInfo.font = UIFont.systemFont(ofSize: 14)
         coinInfo.textColor = .textSecondary
         coinInfo.numberOfLines = 0
@@ -336,6 +404,21 @@ final class QuizResultViewController: UIViewController {
 
     // MARK: - Actions
     @objc private func continueTapped() {
+        // Check coins before continuing
+        guard RewardManager.shared.coins >= 1 else {
+            let alert = UIAlertController(
+                title: "金币不足",
+                message: "闯关需要消耗1金币，你当前有\(RewardManager.shared.coins)金币。请先完成阅读练习获取金币。",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "确定", style: .default))
+            present(alert, animated: true)
+            return
+        }
+
+        // Deduct 1 coin
+        RewardManager.shared.spendCoins(1)
+
         // Start a new quiz level
         WrongAnswerBookManager.shared.syncWrongAnswers()
         WrongAnswerBookManager.shared.waitForSync { [weak self] in
@@ -368,6 +451,62 @@ final class QuizResultViewController: UIViewController {
             let quizVC = QuizViewController(quizSession: session, questions: newQuestions)
 
             // Replace current navigation stack: pop result, push quiz
+            if var viewControllers = self.navigationController?.viewControllers {
+                viewControllers.removeLast()
+                viewControllers.append(quizVC)
+                self.navigationController?.setViewControllers(viewControllers, animated: true)
+            }
+        }
+    }
+
+    @objc private func retryTapped() {
+        // Re-challenge the same level — check coins first
+        guard RewardManager.shared.coins >= 1 else {
+            let alert = UIAlertController(
+                title: "金币不足",
+                message: "闯关需要消耗1金币，你当前有\(RewardManager.shared.coins)金币。请先完成阅读练习获取金币。",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "确定", style: .default))
+            present(alert, animated: true)
+            return
+        }
+
+        // Deduct 1 coin
+        RewardManager.shared.spendCoins(1)
+
+        // Start a new quiz at the same level
+        WrongAnswerBookManager.shared.syncWrongAnswers()
+        WrongAnswerBookManager.shared.waitForSync { [weak self] in
+            guard let self = self else { return }
+            let manager = WrongAnswerBookManager.shared
+
+            guard let newQuestions = manager.generateQuizLevel() else {
+                let alert = UIAlertController(
+                    title: "无法继续",
+                    message: "错题本中至少需要4个字词才能开始闯关。",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "确定", style: .default))
+                self.present(alert, animated: true)
+                return
+            }
+
+            // Same level number (since level wasn't advanced)
+            let levelNumber = manager.totalLevelsCompleted + 1
+            let quizData = newQuestions.map { q -> QuizQuestionData in
+                return QuizQuestionData(
+                    correctAnswer: q.correctAnswer,
+                    options: q.options,
+                    correctIndex: q.correctIndex,
+                    questionType: q.questionType.rawValue,
+                    sourceItemID: q.sourceItem.id
+                )
+            }
+            let session = QuizSession(levelNumber: levelNumber, questions: quizData)
+
+            let quizVC = QuizViewController(quizSession: session, questions: newQuestions)
+
             if var viewControllers = self.navigationController?.viewControllers {
                 viewControllers.removeLast()
                 viewControllers.append(quizVC)

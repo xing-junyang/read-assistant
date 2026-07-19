@@ -152,6 +152,23 @@ class QuizSession: NSObject, NSCoding {
     var endTime: Date?
     /// Did the user complete this level?
     var isCompleted: Bool
+    /// Coins earned from this session (0 if none, negative if spent).
+    var coinsEarned: Int
+
+    /// Result tier based on score percentage.
+    enum ResultTier: Int {
+        case completeVictory = 0  // >= 90% — earn 3 coins, advance
+        case success = 1          // >= 60% — no coins, advance
+        case failure = 2          // < 60% — no advance
+    }
+
+    /// Computed result tier.
+    var resultTier: ResultTier {
+        let pct = totalQuestions > 0 ? Double(score) / Double(totalQuestions) * 100 : 0
+        if pct >= 90 { return .completeVictory }
+        if pct >= 60 { return .success }
+        return .failure
+    }
 
     var score: Int {
         var correct = 0
@@ -177,6 +194,7 @@ class QuizSession: NSObject, NSCoding {
         self.userAnswers = Array(repeating: -1, count: questions.count)
         self.startTime = startTime
         self.isCompleted = false
+        self.coinsEarned = 0
         super.init()
     }
 
@@ -188,6 +206,7 @@ class QuizSession: NSObject, NSCoding {
         coder.encode(startTime, forKey: "startTime")
         coder.encode(endTime, forKey: "endTime")
         coder.encode(isCompleted, forKey: "isCompleted")
+        coder.encode(coinsEarned, forKey: "coinsEarned")
     }
 
     required init?(coder: NSCoder) {
@@ -203,6 +222,7 @@ class QuizSession: NSObject, NSCoding {
         self.startTime = startTime
         self.endTime = coder.decodeObject(forKey: "endTime") as? Date
         self.isCompleted = coder.decodeBool(forKey: "isCompleted")
+        self.coinsEarned = coder.decodeInteger(forKey: "coinsEarned")
         super.init()
     }
 }

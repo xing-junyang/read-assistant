@@ -71,7 +71,7 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return 2
+        return 3
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -92,10 +92,14 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
             cell.textLabel?.text = "📝 错题本"
             let count = WrongAnswerBookManager.shared.wrongAnswers.count
             cell.detailTextLabel?.text = count > 0 ? "已收集 \(count) 个错题" : "查看读错和遗漏的字词"
-        } else {
+        } else if indexPath.row == 1 {
             cell.textLabel?.text = "🎯 词语闯关"
             let totalLevels = WrongAnswerBookManager.shared.totalLevelsCompleted
-            cell.detailTextLabel?.text = totalLevels > 0 ? "已闯 \(totalLevels) 关" : "开始挑战，巩固错题"
+            cell.detailTextLabel?.text = totalLevels > 0 ? "已闯 \(totalLevels) 关 (每次消耗1金币)" : "开始挑战，巩固错题 (每次消耗1金币)"
+        } else {
+            cell.textLabel?.text = "📊 闯关历史"
+            let historyCount = WrongAnswerBookManager.shared.quizProgress.sessionHistory.count
+            cell.detailTextLabel?.text = historyCount > 0 ? "共 \(historyCount) 次闯关记录" : "查看闯关成绩和金币记录"
         }
 
         return cell
@@ -123,43 +127,85 @@ extension WordChallengeMenuViewController: UITableViewDelegate {
                     self?.navigationController?.pushViewController(vc, animated: true)
                 }
             }
+        } else if indexPath.row == 1 {
+            // 词语闯关 - check coins first, then confirm
+            startQuizWithCoinCheck()
         } else {
-            // 词语闯关 - sync first, then start quiz
-            let loadingAlert = UIAlertController(title: "准备中...", message: "正在同步错题数据", preferredStyle: .alert)
-            present(loadingAlert, animated: true)
+            // 闯关历史
+            let historyVC = QuizHistoryViewController()
+            navigationController?.pushViewController(historyVC, animated: true)
+        }
+    }
 
-            WrongAnswerBookManager.shared.syncWrongAnswers()
-            WrongAnswerBookManager.shared.waitForSync { [weak self] in
-                loadingAlert.dismiss(animated: true) {
-                    guard let self = self else { return }
-                    let manager = WrongAnswerBookManager.shared
-                    guard let questions = manager.generateQuizLevel() else {
-                        let alert = UIAlertController(
-                            title: "无法开始",
-                            message: "错题本中至少需要4个字词才能开始闯关。请先完成一些阅读练习。",
-                            preferredStyle: .alert
-                        )
-                        alert.addAction(UIAlertAction(title: "确定", style: .default))
-                        self.present(alert, animated: true)
-                        return
-                    }
+    /// Checks if user has enough coins, then shows confirmation dialog before starting quiz.
+    private func startQuizWithCoinCheck() {
+        let currentCoins = RewardManager.shared.coins
 
-                    // Create quiz session data
-                    let levelNumber = manager.totalLevelsCompleted + 1
-                    let quizData = questions.map { q -> QuizQuestionData in
-                        return QuizQuestionData(
-                            correctAnswer: q.correctAnswer,
-                            options: q.options,
-                            correctIndex: q.correctIndex,
-                            questionType: q.questionType.rawValue,
-                            sourceItemID: q.sourceItem.id
-                        )
-                    }
-                    let session = QuizSession(levelNumber: levelNumber, questions: quizData)
+        // Check if user has at least 1 coin
+        guard currentCoins >= 1 else {
+            let alert = UIAlertController(
+                title: "金币不足",
+                message: "闯关需要消耗1金币，你当前有\(currentCoins)金币。请先完成阅读练习获取金币。",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "确定", style: .default))
+            present(alert, animated: true)
+            return
+        }
 
-                    let quizVC = QuizViewController(quizSession: session, questions: questions)
-                    self.navigationController?.pushViewController(quizVC, animated: true)
+        // Show confirmation dialog
+        let confirmAlert = UIAlertController(
+            title: "开始闯关",
+            message: "本次闯关将消耗1金币。\n90分以上：完全胜利，获得3金币\n60分以上：成功，进入下一关\n60分以下：失败，无法进入下一关\n\n当前金币：\(currentCoins)\n确认开始吗？",
+            preferredStyle: .alert
+        )
+        confirmAlert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        confirmAlert.addAction(UIAlertAction(title: "确认开始 (-1💰)", style: .default) { [weak self] _ in
+            self?.proceedToQuiz()
+        })
+        present(confirmAlert, animated: true)
+    }
+
+    /// Deducts 1 coin and starts the quiz.
+    private func proceedToQuiz() {
+        // Deduct 1 coin
+        RewardManager.shared.spendCoins(1)
+
+        // Sync and start quiz
+        let loadingAlert = UIAlertController(title: "准备中...", message: "正在同步错题数据", preferredStyle: .alert)
+        present(loadingAlert, animated: true)
+
+        WrongAnswerBookManager.shared.syncWrongAnswers()
+        WrongAnswerBookManager.shared.waitForSync { [weak self] in
+            loadingAlert.dismiss(animated: true) {
+                guard let self = self else { return }
+                let manager = WrongAnswerBookManager.shared
+                guard let questions = manager.generateQuizLevel() else {
+                    let alert = UIAlertController(
+                        title: "无法开始",
+                        message: "错题本中至少需要4个字词才能开始闯关。请先完成一些阅读练习。",
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: "确定", style: .default))
+                    self.present(alert, animated: true)
+                    return
                 }
+
+                // Create quiz session data
+                let levelNumber = manager.totalLevelsCompleted + 1
+                let quizData = questions.map { q -> QuizQuestionData in
+                    return QuizQuestionData(
+                        correctAnswer: q.correctAnswer,
+                        options: q.options,
+                        correctIndex: q.correctIndex,
+                        questionType: q.questionType.rawValue,
+                        sourceItemID: q.sourceItem.id
+                    )
+                }
+                let session = QuizSession(levelNumber: levelNumber, questions: quizData)
+
+                let quizVC = QuizViewController(quizSession: session, questions: questions)
+                self.navigationController?.pushViewController(quizVC, animated: true)
             }
         }
     }
