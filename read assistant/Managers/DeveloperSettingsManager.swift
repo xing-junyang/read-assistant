@@ -17,6 +17,8 @@ final class DeveloperSettingsManager {
         static let quizCostCoins = "developer_quizCostCoins"
         static let quizRewardCoins = "developer_quizRewardCoins"
         static let consecutiveVictoryBonusEnabled = "developer_consecutiveVictoryBonusEnabled"
+        static let idiomChainCostCoins = "developer_idiomChainCostCoins"
+        static let characterMatchCostCoins = "developer_characterMatchCostCoins"
     }
 
     private init() {}
@@ -43,6 +45,12 @@ final class DeveloperSettingsManager {
 
     /// Default consecutive victory bonus enabled.
     static let defaultConsecutiveVictoryBonusEnabled: Bool = true
+
+    /// Default coin cost to play Idiom Chain game.
+    static let defaultIdiomChainCostCoins: Int = 10
+
+    /// Default coin cost to play Character Match game.
+    static let defaultCharacterMatchCostCoins: Int = 20
 
     // MARK: - Stored Values (Developer Overrides)
 
@@ -125,6 +133,38 @@ final class DeveloperSettingsManager {
         }
     }
 
+    /// Coin cost to play one Idiom Chain game. Returns nil if default should be used.
+    var idiomChainCostCoins: Int? {
+        get {
+            let key = Keys.idiomChainCostCoins
+            guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
+            return UserDefaults.standard.integer(forKey: key)
+        }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: Keys.idiomChainCostCoins)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.idiomChainCostCoins)
+            }
+        }
+    }
+
+    /// Coin cost to play one Character Match game. Returns nil if default should be used.
+    var characterMatchCostCoins: Int? {
+        get {
+            let key = Keys.characterMatchCostCoins
+            guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
+            return UserDefaults.standard.integer(forKey: key)
+        }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: Keys.characterMatchCostCoins)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.characterMatchCostCoins)
+            }
+        }
+    }
+
     // MARK: - Effective Values (Developer Override > Default)
 
     /// Effective API key: developer override or hardcoded default.
@@ -169,6 +209,18 @@ final class DeveloperSettingsManager {
         return Self.defaultConsecutiveVictoryBonusEnabled
     }
 
+    /// Effective coin cost to play one Idiom Chain game.
+    var effectiveIdiomChainCostCoins: Int {
+        if let stored = idiomChainCostCoins, stored >= 0 { return stored }
+        return Self.defaultIdiomChainCostCoins
+    }
+
+    /// Effective coin cost to play one Character Match game.
+    var effectiveCharacterMatchCostCoins: Int {
+        if let stored = characterMatchCostCoins, stored >= 0 { return stored }
+        return Self.defaultCharacterMatchCostCoins
+    }
+
     // MARK: - Reset
 
     /// Clears all developer overrides, reverting to defaults.
@@ -180,5 +232,7 @@ final class DeveloperSettingsManager {
         UserDefaults.standard.removeObject(forKey: Keys.quizCostCoins)
         UserDefaults.standard.removeObject(forKey: Keys.quizRewardCoins)
         UserDefaults.standard.removeObject(forKey: Keys.consecutiveVictoryBonusEnabled)
+        UserDefaults.standard.removeObject(forKey: Keys.idiomChainCostCoins)
+        UserDefaults.standard.removeObject(forKey: Keys.characterMatchCostCoins)
     }
 }

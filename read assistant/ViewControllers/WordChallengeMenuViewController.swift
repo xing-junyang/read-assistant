@@ -71,7 +71,7 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return 3
+        return 5
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -97,10 +97,18 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
             let totalLevels = WrongAnswerBookManager.shared.totalLevelsCompleted
             let costCoins = DeveloperSettingsManager.shared.effectiveQuizCostCoins
             cell.detailTextLabel?.text = totalLevels > 0 ? "已闯 \(totalLevels) 关 (每次消耗\(costCoins)金币)" : "开始挑战，巩固错题 (每次消耗\(costCoins)金币)"
-        } else {
+        } else if indexPath.row == 2 {
             cell.textLabel?.text = "📊 闯关历史"
             let historyCount = WrongAnswerBookManager.shared.quizProgress.sessionHistory.count
             cell.detailTextLabel?.text = historyCount > 0 ? "共 \(historyCount) 次闯关记录" : "查看闯关成绩和金币记录"
+        } else if indexPath.row == 3 {
+            cell.textLabel?.text = "汉字拼图"
+            let costCoins = DeveloperSettingsManager.shared.effectiveIdiomChainCostCoins
+            cell.detailTextLabel?.text = "还原打乱的汉字顺序，消耗\(costCoins)金币"
+        } else {
+            cell.textLabel?.text = "汉字消消乐"
+            let costCoins = DeveloperSettingsManager.shared.effectiveCharacterMatchCostCoins
+            cell.detailTextLabel?.text = "翻牌配对汉字与拼音，消耗\(costCoins)金币"
         }
 
         return cell
@@ -131,11 +139,51 @@ extension WordChallengeMenuViewController: UITableViewDelegate {
         } else if indexPath.row == 1 {
             // 词语闯关 - check coins first, then confirm
             startQuizWithCoinCheck()
-        } else {
+        } else if indexPath.row == 2 {
             // 闯关历史
             let historyVC = QuizHistoryViewController()
             navigationController?.pushViewController(historyVC, animated: true)
+        } else if indexPath.row == 3 {
+            // 汉字拼图
+            startGameWithCoinCheck(gameName: "汉字拼图", costCoins: DeveloperSettingsManager.shared.effectiveIdiomChainCostCoins) { [weak self] in
+                let vc = CharacterScrambleViewController()
+                self?.navigationController?.pushViewController(vc, animated: true)
+            }
+        } else {
+            // 汉字消消乐
+            startGameWithCoinCheck(gameName: "汉字消消乐", costCoins: DeveloperSettingsManager.shared.effectiveCharacterMatchCostCoins) { [weak self] in
+                let vc = CharacterMatchViewController()
+                self?.navigationController?.pushViewController(vc, animated: true)
+            }
         }
+    }
+
+    /// Generic coin-check and confirmation flow for mini-games.
+    private func startGameWithCoinCheck(gameName: String, costCoins: Int, onStart: @escaping () -> Void) {
+        let currentCoins = RewardManager.shared.coins
+
+        guard currentCoins >= costCoins else {
+            let alert = UIAlertController(
+                title: "金币不足",
+                message: "\(gameName)需要消耗\(costCoins)金币，你当前有\(currentCoins)金币。请先完成阅读练习获取金币。",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "确定", style: .default))
+            present(alert, animated: true)
+            return
+        }
+
+        let confirmAlert = UIAlertController(
+            title: "开始\(gameName)",
+            message: "本次游戏将消耗\(costCoins)金币。\n当前金币：\(currentCoins)\n确认开始吗？",
+            preferredStyle: .alert
+        )
+        confirmAlert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        confirmAlert.addAction(UIAlertAction(title: "确认开始 (-\(costCoins)💰)", style: .default) { [weak self] _ in
+            guard RewardManager.shared.spendCoins(costCoins) else { return }
+            onStart()
+        })
+        present(confirmAlert, animated: true)
     }
 
     /// Checks if user has enough coins, then shows confirmation dialog before starting quiz.

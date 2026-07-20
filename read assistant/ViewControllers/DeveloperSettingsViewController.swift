@@ -14,6 +14,7 @@ final class DeveloperSettingsViewController: UIViewController {
         case rewards
         case quiz
         case quizCoins
+        case gameCoins
         case hearts
 
         var title: String {
@@ -22,6 +23,7 @@ final class DeveloperSettingsViewController: UIViewController {
             case .rewards: return "奖励数据调试"
             case .quiz: return "闯关数据调试"
             case .quizCoins: return "闯关金币设置"
+            case .gameCoins: return "小游戏金币设置"
             case .hearts: return "红心调试"
             }
         }
@@ -113,6 +115,18 @@ final class DeveloperSettingsViewController: UIViewController {
             case .setCostCoins: return "闯关消耗金币数"
             case .setRewardCoins: return "完全胜利奖励金币数"
             case .toggleConsecutiveVictoryBonus: return "连续完全胜利加成"
+            }
+        }
+    }
+
+    private enum GameCoinsRow: Int, CaseIterable {
+        case setIdiomChainCost
+        case setCharacterMatchCost
+
+        var title: String {
+            switch self {
+            case .setIdiomChainCost: return "汉字拼图消耗金币数"
+            case .setCharacterMatchCost: return "汉字消消乐消耗金币数"
             }
         }
     }
@@ -237,6 +251,8 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             return QuizRow.allCases.count
         case .quizCoins:
             return QuizCoinsRow.allCases.count
+        case .gameCoins:
+            return GameCoinsRow.allCases.count
         case .hearts:
             return HeartRow.allCases.count
         }
@@ -265,6 +281,8 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             configureQuizCell(cell, at: indexPath)
         case .quizCoins:
             configureQuizCoinsCell(cell, at: indexPath)
+        case .gameCoins:
+            configureGameCoinsCell(cell, at: indexPath)
         case .hearts:
             configureHeartCell(cell, at: indexPath)
         }
@@ -347,6 +365,8 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             return "调试用：可设置或重置闯关进度。"
         case .quizCoins:
             return "自定义闯关消耗和奖励的金币数量。连续完全胜利加成：每次完全胜利额外加1金币（第2连胜+2，第3连胜+3，依此类推）。"
+        case .gameCoins:
+            return "自定义小游戏消耗的金币数量。汉字拼图默认10金币，汉字消消乐默认20金币。"
         case .hearts:
             return "调试用：可开关无限红心模式、修改红心数量和上限、设置恢复时间。"
         }
@@ -372,6 +392,9 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
         case .quizCoins:
             guard let row = QuizCoinsRow(rawValue: indexPath.row) else { return }
             handleQuizCoinsAction(for: row)
+        case .gameCoins:
+            guard let row = GameCoinsRow(rawValue: indexPath.row) else { return }
+            handleGameCoinsAction(for: row)
         case .hearts:
             guard let row = HeartRow(rawValue: indexPath.row) else { return }
             handleHeartAction(for: row)
@@ -668,6 +691,73 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
             }
             tableView.reloadData()
             showAlert(title: "完成", message: newValue ? "连续完全胜利加成已开启 🔥" : "连续完全胜利加成已关闭")
+        }
+    }
+    
+    // MARK: - Game Coins Debug Actions
+
+    private func configureGameCoinsCell(_ cell: UITableViewCell, at indexPath: IndexPath) {
+        guard let row = GameCoinsRow(rawValue: indexPath.row) else { return }
+        let devSettings = DeveloperSettingsManager.shared
+
+        cell.textLabel?.text = row.title
+        cell.textLabel?.font = UIFont.systemFont(ofSize: 16)
+        cell.textLabel?.textColor = .textPrimary
+        cell.detailTextLabel?.font = UIFont.systemFont(ofSize: 12)
+
+        switch row {
+        case .setIdiomChainCost:
+            let cost = devSettings.effectiveIdiomChainCostCoins
+            let hasOverride = devSettings.idiomChainCostCoins != nil
+            cell.detailTextLabel?.text = "当前: \(cost)💰\(hasOverride ? " [自定义]" : " (默认)")"
+            cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
+            cell.accessoryType = .disclosureIndicator
+        case .setCharacterMatchCost:
+            let cost = devSettings.effectiveCharacterMatchCostCoins
+            let hasOverride = devSettings.characterMatchCostCoins != nil
+            cell.detailTextLabel?.text = "当前: \(cost)💰\(hasOverride ? " [自定义]" : " (默认)")"
+            cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
+            cell.accessoryType = .disclosureIndicator
+        }
+
+        cell.backgroundColor = .cardBackground
+    }
+
+    private func handleGameCoinsAction(for row: GameCoinsRow) {
+        let devSettings = DeveloperSettingsManager.shared
+
+        switch row {
+        case .setIdiomChainCost:
+            let currentCost = devSettings.effectiveIdiomChainCostCoins
+            showNumberInput(title: "汉字拼图消耗金币数", message: "当前: \(currentCost)💰\n默认: \(DeveloperSettingsManager.defaultIdiomChainCostCoins)💰", currentValue: "\(currentCost)") { [weak self] value in
+                guard value >= 0 else {
+                    self?.showAlert(title: "错误", message: "消耗金币数不能为负数")
+                    return
+                }
+                if value == DeveloperSettingsManager.defaultIdiomChainCostCoins {
+                    devSettings.idiomChainCostCoins = nil
+                } else {
+                    devSettings.idiomChainCostCoins = value
+                }
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "汉字拼图消耗已设置为 \(value)💰")
+            }
+
+        case .setCharacterMatchCost:
+            let currentCost = devSettings.effectiveCharacterMatchCostCoins
+            showNumberInput(title: "汉字消消乐消耗金币数", message: "当前: \(currentCost)💰\n默认: \(DeveloperSettingsManager.defaultCharacterMatchCostCoins)💰", currentValue: "\(currentCost)") { [weak self] value in
+                guard value >= 0 else {
+                    self?.showAlert(title: "错误", message: "消耗金币数不能为负数")
+                    return
+                }
+                if value == DeveloperSettingsManager.defaultCharacterMatchCostCoins {
+                    devSettings.characterMatchCostCoins = nil
+                } else {
+                    devSettings.characterMatchCostCoins = value
+                }
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "汉字消消乐消耗已设置为 \(value)💰")
+            }
         }
     }
     
