@@ -13,6 +13,7 @@ final class DeveloperSettingsViewController: UIViewController {
         case api
         case rewards
         case quiz
+        case quizCoins
         case hearts
 
         var title: String {
@@ -20,6 +21,7 @@ final class DeveloperSettingsViewController: UIViewController {
             case .api: return "API 配置"
             case .rewards: return "奖励数据调试"
             case .quiz: return "闯关数据调试"
+            case .quizCoins: return "闯关金币设置"
             case .hearts: return "红心调试"
             }
         }
@@ -87,6 +89,7 @@ final class DeveloperSettingsViewController: UIViewController {
         case toggleUnlimited
         case setHearts
         case setMaxHearts
+        case setRegenerationInterval
         case refillHearts
 
         var title: String {
@@ -94,7 +97,22 @@ final class DeveloperSettingsViewController: UIViewController {
             case .toggleUnlimited: return "无限红心模式"
             case .setHearts: return "设置红心数量"
             case .setMaxHearts: return "设置红心上限"
+            case .setRegenerationInterval: return "红心恢复时间（秒）"
             case .refillHearts: return "补满红心"
+            }
+        }
+    }
+
+    private enum QuizCoinsRow: Int, CaseIterable {
+        case setCostCoins
+        case setRewardCoins
+        case toggleConsecutiveVictoryBonus
+
+        var title: String {
+            switch self {
+            case .setCostCoins: return "闯关消耗金币数"
+            case .setRewardCoins: return "完全胜利奖励金币数"
+            case .toggleConsecutiveVictoryBonus: return "连续完全胜利加成"
             }
         }
     }
@@ -217,6 +235,8 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             return RewardRow.allCases.count
         case .quiz:
             return QuizRow.allCases.count
+        case .quizCoins:
+            return QuizCoinsRow.allCases.count
         case .hearts:
             return HeartRow.allCases.count
         }
@@ -243,6 +263,8 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             configureRewardCell(cell, at: indexPath)
         case .quiz:
             configureQuizCell(cell, at: indexPath)
+        case .quizCoins:
+            configureQuizCoinsCell(cell, at: indexPath)
         case .hearts:
             configureHeartCell(cell, at: indexPath)
         }
@@ -323,8 +345,10 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
             return "调试用：可直接修改奖励数据，方便测试各功能。"
         case .quiz:
             return "调试用：可设置或重置闯关进度。"
+        case .quizCoins:
+            return "自定义闯关消耗和奖励的金币数量。连续完全胜利加成：每次完全胜利额外加1金币（第2连胜+2，第3连胜+3，依此类推）。"
         case .hearts:
-            return "调试用：可开关无限红心模式、修改红心数量和上限。"
+            return "调试用：可开关无限红心模式、修改红心数量和上限、设置恢复时间。"
         }
     }
 }
@@ -345,6 +369,9 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
         case .quiz:
             guard let row = QuizRow(rawValue: indexPath.row) else { return }
             handleQuizAction(for: row)
+        case .quizCoins:
+            guard let row = QuizCoinsRow(rawValue: indexPath.row) else { return }
+            handleQuizCoinsAction(for: row)
         case .hearts:
             guard let row = HeartRow(rawValue: indexPath.row) else { return }
             handleHeartAction(for: row)
@@ -456,10 +483,52 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
             cell.detailTextLabel?.text = "当前上限: \(heartsManager.maxHearts) (最大30)"
             cell.detailTextLabel?.textColor = .textSecondary
             cell.accessoryType = .disclosureIndicator
+        case .setRegenerationInterval:
+            let devSettings = DeveloperSettingsManager.shared
+            let interval = devSettings.effectiveHeartRegenerationInterval
+            let minutes = Int(interval) / 60
+            let seconds = Int(interval) % 60
+            let hasOverride = devSettings.heartRegenerationInterval != nil
+            cell.detailTextLabel?.text = "\(minutes)分\(seconds)秒 (\(Int(interval))秒)\(hasOverride ? " [自定义]" : "")"
+            cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
+            cell.accessoryType = .disclosureIndicator
         case .refillHearts:
             cell.detailTextLabel?.text = "补满到 \(heartsManager.maxHearts) 颗"
             cell.detailTextLabel?.textColor = .textSecondary
             cell.accessoryType = .disclosureIndicator
+        }
+
+        cell.backgroundColor = .cardBackground
+    }
+
+    private func configureQuizCoinsCell(_ cell: UITableViewCell, at indexPath: IndexPath) {
+        guard let row = QuizCoinsRow(rawValue: indexPath.row) else { return }
+        let devSettings = DeveloperSettingsManager.shared
+
+        cell.textLabel?.text = row.title
+        cell.textLabel?.font = UIFont.systemFont(ofSize: 16)
+        cell.textLabel?.textColor = .textPrimary
+        cell.detailTextLabel?.font = UIFont.systemFont(ofSize: 12)
+
+        switch row {
+        case .setCostCoins:
+            let cost = devSettings.effectiveQuizCostCoins
+            let hasOverride = devSettings.quizCostCoins != nil
+            cell.detailTextLabel?.text = "当前: \(cost)💰\(hasOverride ? " [自定义]" : " (默认)")"
+            cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
+            cell.accessoryType = .disclosureIndicator
+        case .setRewardCoins:
+            let reward = devSettings.effectiveQuizRewardCoins
+            let hasOverride = devSettings.quizRewardCoins != nil
+            cell.detailTextLabel?.text = "当前: \(reward)💰\(hasOverride ? " [自定义]" : " (默认)")"
+            cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
+            cell.accessoryType = .disclosureIndicator
+        case .toggleConsecutiveVictoryBonus:
+            let enabled = devSettings.effectiveConsecutiveVictoryBonusEnabled
+            let hasOverride = devSettings.consecutiveVictoryBonusEnabled != nil
+            cell.detailTextLabel?.text = enabled ? "✅ 已开启\(hasOverride ? " [自定义]" : "")" : "❌ 已关闭\(hasOverride ? " [自定义]" : "")"
+            cell.detailTextLabel?.textColor = enabled ? .successGreen : .textSecondary
+            cell.accessoryType = .none
         }
 
         cell.backgroundColor = .cardBackground
@@ -523,11 +592,82 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
                 self?.tableView.reloadData()
                 self?.showAlert(title: "完成", message: "红心上限已设置为 \(heartsManager.maxHearts)")
             }
+
+        case .setRegenerationInterval:
+            let devSettings = DeveloperSettingsManager.shared
+            let currentInterval = devSettings.effectiveHeartRegenerationInterval
+            let currentMinutes = Int(currentInterval) / 60
+            showNumberInput(title: "红心恢复时间（秒）", message: "当前: \(currentMinutes)分\(Int(currentInterval) % 60)秒 (\(Int(currentInterval))秒)\n默认: 600秒（10分钟）", currentValue: "\(Int(currentInterval))") { [weak self] value in
+                guard value >= 10 else {
+                    self?.showAlert(title: "错误", message: "恢复时间不能少于 10 秒")
+                    return
+                }
+                if value == Int(DeveloperSettingsManager.defaultHeartRegenerationInterval) {
+                    devSettings.heartRegenerationInterval = nil  // Reset to default
+                } else {
+                    devSettings.heartRegenerationInterval = TimeInterval(value)
+                }
+                self?.tableView.reloadData()
+                let minutes = value / 60
+                let seconds = value % 60
+                self?.showAlert(title: "完成", message: "红心恢复时间已设置为 \(minutes)分\(seconds)秒")
+            }
             
         case .refillHearts:
             heartsManager.debugRefillHearts()
             tableView.reloadData()
             showAlert(title: "完成", message: "红心已补满！当前：❤️ \(heartsManager.hearts)/\(heartsManager.maxHearts)")
+        }
+    }
+
+    // MARK: - Quiz Coins Debug Actions
+
+    private func handleQuizCoinsAction(for row: QuizCoinsRow) {
+        let devSettings = DeveloperSettingsManager.shared
+
+        switch row {
+        case .setCostCoins:
+            let currentCost = devSettings.effectiveQuizCostCoins
+            showNumberInput(title: "闯关消耗金币数", message: "当前: \(currentCost)💰\n默认: \(DeveloperSettingsManager.defaultQuizCostCoins)💰", currentValue: "\(currentCost)") { [weak self] value in
+                guard value >= 0 else {
+                    self?.showAlert(title: "错误", message: "消耗金币数不能为负数")
+                    return
+                }
+                if value == DeveloperSettingsManager.defaultQuizCostCoins {
+                    devSettings.quizCostCoins = nil
+                } else {
+                    devSettings.quizCostCoins = value
+                }
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "闯关消耗已设置为 \(value)💰")
+            }
+
+        case .setRewardCoins:
+            let currentReward = devSettings.effectiveQuizRewardCoins
+            showNumberInput(title: "完全胜利奖励金币数", message: "当前: \(currentReward)💰\n默认: \(DeveloperSettingsManager.defaultQuizRewardCoins)💰", currentValue: "\(currentReward)") { [weak self] value in
+                guard value >= 0 else {
+                    self?.showAlert(title: "错误", message: "奖励金币数不能为负数")
+                    return
+                }
+                if value == DeveloperSettingsManager.defaultQuizRewardCoins {
+                    devSettings.quizRewardCoins = nil
+                } else {
+                    devSettings.quizRewardCoins = value
+                }
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "完全胜利奖励已设置为 \(value)💰")
+            }
+
+        case .toggleConsecutiveVictoryBonus:
+            let currentValue = devSettings.effectiveConsecutiveVictoryBonusEnabled
+            let newValue = !currentValue
+            if newValue == DeveloperSettingsManager.defaultConsecutiveVictoryBonusEnabled {
+                devSettings.consecutiveVictoryBonusEnabled = nil
+            } else {
+                devSettings.consecutiveVictoryBonusEnabled = newValue
+            }
+            tableView.reloadData()
+            showAlert(title: "完成", message: newValue ? "连续完全胜利加成已开启 🔥" : "连续完全胜利加成已关闭")
         }
     }
     

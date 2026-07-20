@@ -29,25 +29,29 @@ final class QuizResultViewController: UIViewController {
 
         // Process result: advance level and award coins based on score tier
         let tier = quizSession.resultTier
+        let devSettings = DeveloperSettingsManager.shared
+
+        // Record the session first so advanceLevel can update its coinsEarned
+        WrongAnswerBookManager.shared.recordQuizSession(quizSession)
 
         if tier == .completeVictory {
-            // >= 90%: Complete victory — 3 coins, advance level
-            WrongAnswerBookManager.shared.advanceLevel(coinsEarned: 3)
-            quizSession.coinsEarned = 3
+            // >= 90%: Complete victory — reward coins, advance level
+            let rewardCoins = devSettings.effectiveQuizRewardCoins
+            WrongAnswerBookManager.shared.advanceLevel(coinsEarned: rewardCoins, isCompleteVictory: true)
             levelPassed = true
         } else if tier == .success {
             // >= 60%: Success — no coins, advance level
-            WrongAnswerBookManager.shared.advanceLevel(coinsEarned: 0)
-            quizSession.coinsEarned = 0
+            WrongAnswerBookManager.shared.advanceLevel(coinsEarned: 0, isCompleteVictory: false)
             levelPassed = true
         } else {
             // < 60%: Failure — no advance, no coins
-            quizSession.coinsEarned = -1  // Lost 1 coin to play
+            let costCoins = devSettings.effectiveQuizCostCoins
+            quizSession.coinsEarned = -costCoins  // Lost coins to play
+            WrongAnswerBookManager.shared.recordQuizResult(isCompleteVictory: false)
+            // Re-record session with updated coinsEarned
+            WrongAnswerBookManager.shared.recordQuizSession(quizSession)
             levelPassed = false
         }
-
-        // Update the session in history with coin info
-        WrongAnswerBookManager.shared.recordQuizSession(quizSession)
 
         setupUI()
     }
@@ -131,8 +135,9 @@ final class QuizResultViewController: UIViewController {
 
         if tier == .failure {
             // Failure: show "重新挑战" button
+            let costCoins = DeveloperSettingsManager.shared.effectiveQuizCostCoins
             let retryButton = UIButton(type: .system)
-            retryButton.setTitle("重新挑战 (-1💰)", for: .normal)
+            retryButton.setTitle("重新挑战 (-\(costCoins)💰)", for: .normal)
             retryButton.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
             retryButton.backgroundColor = .warningOrange
             retryButton.setTitleColor(.white, for: .normal)
@@ -141,8 +146,9 @@ final class QuizResultViewController: UIViewController {
             buttonsStack.addArrangedSubview(retryButton)
         } else {
             // Success or complete victory: show "继续闯关" button
+            let costCoins = DeveloperSettingsManager.shared.effectiveQuizCostCoins
             let continueButton = UIButton(type: .system)
-            continueButton.setTitle("继续闯关 (-1💰)", for: .normal)
+            continueButton.setTitle("继续闯关 (-\(costCoins)💰)", for: .normal)
             continueButton.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
             continueButton.backgroundColor = .primary
             continueButton.setTitleColor(.white, for: .normal)
@@ -209,7 +215,8 @@ final class QuizResultViewController: UIViewController {
         // Emoji feedback based on new scoring tiers
         let emojiLabel = UILabel()
         if percentage >= 90 {
-            emojiLabel.text = "🎉 完全胜利！获得3金币"
+            let rewardCoins = DeveloperSettingsManager.shared.effectiveQuizRewardCoins
+            emojiLabel.text = "🎉 完全胜利！获得\(rewardCoins)金币"
         } else if percentage >= 60 {
             emojiLabel.text = "👍 闯关成功！进入下一关"
         } else {
@@ -285,8 +292,14 @@ final class QuizResultViewController: UIViewController {
         let tierCoinChange = quizSession.coinsEarned
         if tier == .completeVictory {
             coinMessages.append("🎁 本关奖励：+\(tierCoinChange)金币")
+            // Show consecutive victory streak
+            let streak = WrongAnswerBookManager.shared.consecutiveCompleteVictories
+            if streak > 1 && DeveloperSettingsManager.shared.effectiveConsecutiveVictoryBonusEnabled {
+                coinMessages.append("🔥 连续完全胜利 ×\(streak)：额外 +\(streak)金币")
+            }
         } else if tier == .failure {
-            coinMessages.append("💸 本关消耗：1金币")
+            let costCoins = DeveloperSettingsManager.shared.effectiveQuizCostCoins
+            coinMessages.append("💸 本关消耗：\(costCoins)金币")
         } else {
             coinMessages.append("➖ 本关无金币奖励")
         }
@@ -404,11 +417,12 @@ final class QuizResultViewController: UIViewController {
 
     // MARK: - Actions
     @objc private func continueTapped() {
+        let costCoins = DeveloperSettingsManager.shared.effectiveQuizCostCoins
         // Check coins before continuing
-        guard RewardManager.shared.coins >= 1 else {
+        guard RewardManager.shared.coins >= costCoins else {
             let alert = UIAlertController(
                 title: "金币不足",
-                message: "闯关需要消耗1金币，你当前有\(RewardManager.shared.coins)金币。请先完成阅读练习获取金币。",
+                message: "闯关需要消耗\(costCoins)金币，你当前有\(RewardManager.shared.coins)金币。请先完成阅读练习获取金币。",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "确定", style: .default))
@@ -416,8 +430,8 @@ final class QuizResultViewController: UIViewController {
             return
         }
 
-        // Deduct 1 coin
-        RewardManager.shared.spendCoins(1)
+        // Deduct coins
+        RewardManager.shared.spendCoins(costCoins)
 
         // Start a new quiz level
         WrongAnswerBookManager.shared.syncWrongAnswers()
@@ -460,11 +474,12 @@ final class QuizResultViewController: UIViewController {
     }
 
     @objc private func retryTapped() {
+        let costCoins = DeveloperSettingsManager.shared.effectiveQuizCostCoins
         // Re-challenge the same level — check coins first
-        guard RewardManager.shared.coins >= 1 else {
+        guard RewardManager.shared.coins >= costCoins else {
             let alert = UIAlertController(
                 title: "金币不足",
-                message: "闯关需要消耗1金币，你当前有\(RewardManager.shared.coins)金币。请先完成阅读练习获取金币。",
+                message: "闯关需要消耗\(costCoins)金币，你当前有\(RewardManager.shared.coins)金币。请先完成阅读练习获取金币。",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "确定", style: .default))
@@ -472,8 +487,8 @@ final class QuizResultViewController: UIViewController {
             return
         }
 
-        // Deduct 1 coin
-        RewardManager.shared.spendCoins(1)
+        // Deduct coins
+        RewardManager.shared.spendCoins(costCoins)
 
         // Start a new quiz at the same level
         WrongAnswerBookManager.shared.syncWrongAnswers()

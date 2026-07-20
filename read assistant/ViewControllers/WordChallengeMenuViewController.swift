@@ -95,7 +95,8 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
         } else if indexPath.row == 1 {
             cell.textLabel?.text = "🎯 词语闯关"
             let totalLevels = WrongAnswerBookManager.shared.totalLevelsCompleted
-            cell.detailTextLabel?.text = totalLevels > 0 ? "已闯 \(totalLevels) 关 (每次消耗1金币)" : "开始挑战，巩固错题 (每次消耗1金币)"
+            let costCoins = DeveloperSettingsManager.shared.effectiveQuizCostCoins
+            cell.detailTextLabel?.text = totalLevels > 0 ? "已闯 \(totalLevels) 关 (每次消耗\(costCoins)金币)" : "开始挑战，巩固错题 (每次消耗\(costCoins)金币)"
         } else {
             cell.textLabel?.text = "📊 闯关历史"
             let historyCount = WrongAnswerBookManager.shared.quizProgress.sessionHistory.count
@@ -140,12 +141,14 @@ extension WordChallengeMenuViewController: UITableViewDelegate {
     /// Checks if user has enough coins, then shows confirmation dialog before starting quiz.
     private func startQuizWithCoinCheck() {
         let currentCoins = RewardManager.shared.coins
+        let costCoins = DeveloperSettingsManager.shared.effectiveQuizCostCoins
+        let rewardCoins = DeveloperSettingsManager.shared.effectiveQuizRewardCoins
 
-        // Check if user has at least 1 coin
-        guard currentCoins >= 1 else {
+        // Check if user has enough coins
+        guard currentCoins >= costCoins else {
             let alert = UIAlertController(
                 title: "金币不足",
-                message: "闯关需要消耗1金币，你当前有\(currentCoins)金币。请先完成阅读练习获取金币。",
+                message: "闯关需要消耗\(costCoins)金币，你当前有\(currentCoins)金币。请先完成阅读练习获取金币。",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "确定", style: .default))
@@ -156,20 +159,21 @@ extension WordChallengeMenuViewController: UITableViewDelegate {
         // Show confirmation dialog
         let confirmAlert = UIAlertController(
             title: "开始闯关",
-            message: "本次闯关将消耗1金币。\n90分以上：完全胜利，获得3金币\n60分以上：成功，进入下一关\n60分以下：失败，无法进入下一关\n\n当前金币：\(currentCoins)\n确认开始吗？",
+            message: "本次闯关将消耗\(costCoins)金币。\n90分以上：完全胜利，获得\(rewardCoins)金币\n60分以上：成功，进入下一关\n60分以下：失败，无法进入下一关\n\n当前金币：\(currentCoins)\n确认开始吗？",
             preferredStyle: .alert
         )
         confirmAlert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        confirmAlert.addAction(UIAlertAction(title: "确认开始 (-1💰)", style: .default) { [weak self] _ in
+        confirmAlert.addAction(UIAlertAction(title: "确认开始 (-\(costCoins)💰)", style: .default) { [weak self] _ in
             self?.proceedToQuiz()
         })
         present(confirmAlert, animated: true)
     }
 
-    /// Deducts 1 coin and starts the quiz.
+    /// Deducts coins and starts the quiz.
     private func proceedToQuiz() {
-        // Deduct 1 coin
-        RewardManager.shared.spendCoins(1)
+        let costCoins = DeveloperSettingsManager.shared.effectiveQuizCostCoins
+        // Deduct coins
+        RewardManager.shared.spendCoins(costCoins)
 
         // Sync and start quiz
         let loadingAlert = UIAlertController(title: "准备中...", message: "正在同步错题数据", preferredStyle: .alert)

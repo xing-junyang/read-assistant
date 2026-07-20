@@ -18,14 +18,19 @@ final class HeartsManager {
     }
 
     // MARK: - Constants
-    /// Seconds between heart regeneration (10 minutes).
-    static let heartRegenerationInterval: TimeInterval = 600
+    /// Default seconds between heart regeneration (10 minutes).
+    static let defaultHeartRegenerationInterval: TimeInterval = 600
     /// Default maximum hearts.
     static let defaultMaxHearts = 10
     /// Absolute maximum hearts cap.
     static let absoluteMaxHearts = 30
     /// Increment when purchasing max hearts upgrade.
     static let maxHeartsUpgradeAmount = 2
+
+    /// Current heart regeneration interval (developer-configurable).
+    var heartRegenerationInterval: TimeInterval {
+        return DeveloperSettingsManager.shared.effectiveHeartRegenerationInterval
+    }
 
     // MARK: - Properties
     private let defaults = UserDefaults.standard
@@ -91,16 +96,16 @@ final class HeartsManager {
         let now = Date().timeIntervalSince1970
         let elapsed = now - lastUpdateTime
 
-        guard elapsed >= Self.heartRegenerationInterval else {
+        guard elapsed >= heartRegenerationInterval else {
             return storedHearts
         }
 
-        let regenerated = Int(elapsed / Self.heartRegenerationInterval)
+        let regenerated = Int(elapsed / heartRegenerationInterval)
         let newHearts = min(maxHearts, storedHearts + regenerated)
         storedHearts = newHearts
 
         // Advance the timestamp by exactly the regenerated interval
-        lastUpdateTime += Double(regenerated) * Self.heartRegenerationInterval
+        lastUpdateTime += Double(regenerated) * heartRegenerationInterval
 
         return newHearts
     }
@@ -121,7 +126,7 @@ final class HeartsManager {
 
         let now = Date().timeIntervalSince1970
         let elapsed = now - lastUpdateTime
-        let remaining = Self.heartRegenerationInterval - elapsed.truncatingRemainder(dividingBy: Self.heartRegenerationInterval)
+        let remaining = heartRegenerationInterval - elapsed.truncatingRemainder(dividingBy: heartRegenerationInterval)
         return remaining
     }
 
@@ -146,11 +151,11 @@ final class HeartsManager {
         let heartsNeeded = maxHearts - current
         let now = Date().timeIntervalSince1970
         let elapsed = now - lastUpdateTime
-        let timeSinceLastHeart = elapsed.truncatingRemainder(dividingBy: Self.heartRegenerationInterval)
-        let timeToNextHeart = Self.heartRegenerationInterval - timeSinceLastHeart
+        let timeSinceLastHeart = elapsed.truncatingRemainder(dividingBy: heartRegenerationInterval)
+        let timeToNextHeart = heartRegenerationInterval - timeSinceLastHeart
 
-        // First heart comes after timeToNextHeart, remaining hearts come every 10 min
-        return timeToNextHeart + Double(heartsNeeded - 1) * Self.heartRegenerationInterval
+        // First heart comes after timeToNextHeart, remaining hearts come every configured interval
+        return timeToNextHeart + Double(heartsNeeded - 1) * heartRegenerationInterval
     }
 
     // MARK: - Heart Consumption

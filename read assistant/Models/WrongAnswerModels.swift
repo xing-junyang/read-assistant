@@ -234,21 +234,27 @@ class QuizProgress: NSObject, NSCoding {
     var totalLevelsCompleted: Int
     /// History of all quiz sessions.
     var sessionHistory: [QuizSession]
+    /// Number of consecutive complete victories (>= 90% score).
+    /// Resets to 0 on any non-complete-victory result.
+    var consecutiveCompleteVictories: Int
 
-    init(totalLevelsCompleted: Int = 0, sessionHistory: [QuizSession] = []) {
+    init(totalLevelsCompleted: Int = 0, sessionHistory: [QuizSession] = [], consecutiveCompleteVictories: Int = 0) {
         self.totalLevelsCompleted = totalLevelsCompleted
         self.sessionHistory = sessionHistory
+        self.consecutiveCompleteVictories = consecutiveCompleteVictories
         super.init()
     }
 
     func encode(with coder: NSCoder) {
         coder.encode(totalLevelsCompleted, forKey: "totalLevelsCompleted")
         coder.encode(sessionHistory, forKey: "sessionHistory")
+        coder.encode(consecutiveCompleteVictories, forKey: "consecutiveCompleteVictories")
     }
 
     required init?(coder: NSCoder) {
         self.totalLevelsCompleted = coder.decodeInteger(forKey: "totalLevelsCompleted")
         self.sessionHistory = coder.decodeObject(forKey: "sessionHistory") as? [QuizSession] ?? []
+        self.consecutiveCompleteVictories = coder.decodeInteger(forKey: "consecutiveCompleteVictories")
         super.init()
     }
 }

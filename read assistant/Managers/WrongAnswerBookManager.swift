@@ -966,22 +966,66 @@ final class WrongAnswerBookManager {
     }
 
     /// Marks the current level as passed, advances to the next level, and awards coins.
-    /// - Parameter coinsEarned: Number of coins to award (0 for basic success, 3 for complete victory).
-    func advanceLevel(coinsEarned: Int) {
+    /// - Parameters:
+    ///   - coinsEarned: Number of coins to award (0 for basic success, 3+ for complete victory).
+    ///   - isCompleteVictory: Whether this was a complete victory (>= 90% score).
+    func advanceLevel(coinsEarned: Int, isCompleteVictory: Bool = false) {
         quizProgress.totalLevelsCompleted += 1
+
+        // Track consecutive complete victories
+        if isCompleteVictory {
+            quizProgress.consecutiveCompleteVictories += 1
+        } else {
+            quizProgress.consecutiveCompleteVictories = 0
+        }
+
+        var totalCoins = coinsEarned
         if coinsEarned > 0 {
             RewardManager.shared.coins += coinsEarned
+        }
+
+        // Consecutive victory bonus: +1 coin per consecutive complete victory
+        if isCompleteVictory && DeveloperSettingsManager.shared.effectiveConsecutiveVictoryBonusEnabled {
+            let streak = quizProgress.consecutiveCompleteVictories
+            if streak > 1 {
+                let bonus = streak  // streak 2 → +2, streak 3 → +3, etc.
+                RewardManager.shared.coins += bonus
+                totalCoins += bonus
+            }
         }
 
         // Milestone bonuses still apply (every 10/100 levels)
         let level = quizProgress.totalLevelsCompleted
         if level % 10 == 0 {
             RewardManager.shared.coins += 20
+            totalCoins += 20
         }
         if level % 100 == 0 {
             RewardManager.shared.coins += 50
+            totalCoins += 50
         }
 
+        // Update the session's coinsEarned to reflect total (for history display)
+        if let lastSession = quizProgress.sessionHistory.last {
+            lastSession.coinsEarned = totalCoins
+        }
+
+        saveQuizProgress()
+    }
+
+    /// Returns the current consecutive complete victory streak.
+    var consecutiveCompleteVictories: Int {
+        return quizProgress.consecutiveCompleteVictories
+    }
+
+    /// Updates consecutive victory tracking without advancing a level.
+    /// Called when a quiz session completes to immediately update the streak.
+    func recordQuizResult(isCompleteVictory: Bool) {
+        if isCompleteVictory {
+            quizProgress.consecutiveCompleteVictories += 1
+        } else {
+            quizProgress.consecutiveCompleteVictories = 0
+        }
         saveQuizProgress()
     }
 

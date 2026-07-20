@@ -473,8 +473,11 @@ final class SettlementViewController: UIViewController {
     // MARK: - Actions
 
     @objc private func rereadTapped() {
-        navigationController?.popViewController(animated: true)
+        // Re-reading does NOT consume a heart — call onReread before popping
+        // so the ReadingViewController is reset in-place without going through
+        // the heart-gate in TaskDetailViewController.
         data.onReread()
+        navigationController?.popViewController(animated: true)
     }
 
     @objc private func backTapped() {

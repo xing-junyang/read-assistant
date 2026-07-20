@@ -13,6 +13,10 @@ final class DeveloperSettingsManager {
         static let apiKey = "developer_apiKey"
         static let model = "developer_model"
         static let baseURL = "developer_baseURL"
+        static let heartRegenerationInterval = "developer_heartRegenerationInterval"
+        static let quizCostCoins = "developer_quizCostCoins"
+        static let quizRewardCoins = "developer_quizRewardCoins"
+        static let consecutiveVictoryBonusEnabled = "developer_consecutiveVictoryBonusEnabled"
     }
 
     private init() {}
@@ -27,6 +31,18 @@ final class DeveloperSettingsManager {
 
     /// Default base URL.
     static let defaultBaseURL: String = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+    /// Default heart regeneration interval in seconds (10 minutes).
+    static let defaultHeartRegenerationInterval: TimeInterval = 600
+
+    /// Default coin cost to play a quiz level.
+    static let defaultQuizCostCoins: Int = 1
+
+    /// Default coin reward for complete victory in quiz.
+    static let defaultQuizRewardCoins: Int = 3
+
+    /// Default consecutive victory bonus enabled.
+    static let defaultConsecutiveVictoryBonusEnabled: Bool = true
 
     // MARK: - Stored Values (Developer Overrides)
 
@@ -43,6 +59,70 @@ final class DeveloperSettingsManager {
     var baseURL: String? {
         get { UserDefaults.standard.string(forKey: Keys.baseURL) }
         set { UserDefaults.standard.set(newValue, forKey: Keys.baseURL) }
+    }
+
+    /// Heart regeneration interval in seconds. Returns nil if default should be used.
+    var heartRegenerationInterval: TimeInterval? {
+        get {
+            let key = Keys.heartRegenerationInterval
+            guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
+            return UserDefaults.standard.double(forKey: key)
+        }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: Keys.heartRegenerationInterval)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.heartRegenerationInterval)
+            }
+        }
+    }
+
+    /// Coin cost to play one quiz level. Returns nil if default should be used.
+    var quizCostCoins: Int? {
+        get {
+            let key = Keys.quizCostCoins
+            guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
+            return UserDefaults.standard.integer(forKey: key)
+        }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: Keys.quizCostCoins)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.quizCostCoins)
+            }
+        }
+    }
+
+    /// Coin reward for complete victory in quiz. Returns nil if default should be used.
+    var quizRewardCoins: Int? {
+        get {
+            let key = Keys.quizRewardCoins
+            guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
+            return UserDefaults.standard.integer(forKey: key)
+        }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: Keys.quizRewardCoins)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.quizRewardCoins)
+            }
+        }
+    }
+
+    /// Whether consecutive complete victory bonus is enabled.
+    var consecutiveVictoryBonusEnabled: Bool? {
+        get {
+            let key = Keys.consecutiveVictoryBonusEnabled
+            guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
+            return UserDefaults.standard.bool(forKey: key)
+        }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: Keys.consecutiveVictoryBonusEnabled)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.consecutiveVictoryBonusEnabled)
+            }
+        }
     }
 
     // MARK: - Effective Values (Developer Override > Default)
@@ -65,6 +145,30 @@ final class DeveloperSettingsManager {
         return Self.defaultBaseURL
     }
 
+    /// Effective heart regeneration interval (seconds).
+    var effectiveHeartRegenerationInterval: TimeInterval {
+        if let stored = heartRegenerationInterval, stored > 0 { return stored }
+        return Self.defaultHeartRegenerationInterval
+    }
+
+    /// Effective coin cost to play one quiz level.
+    var effectiveQuizCostCoins: Int {
+        if let stored = quizCostCoins, stored >= 0 { return stored }
+        return Self.defaultQuizCostCoins
+    }
+
+    /// Effective coin reward for complete victory.
+    var effectiveQuizRewardCoins: Int {
+        if let stored = quizRewardCoins, stored >= 0 { return stored }
+        return Self.defaultQuizRewardCoins
+    }
+
+    /// Effective consecutive victory bonus toggle.
+    var effectiveConsecutiveVictoryBonusEnabled: Bool {
+        if let stored = consecutiveVictoryBonusEnabled { return stored }
+        return Self.defaultConsecutiveVictoryBonusEnabled
+    }
+
     // MARK: - Reset
 
     /// Clears all developer overrides, reverting to defaults.
@@ -72,5 +176,9 @@ final class DeveloperSettingsManager {
         UserDefaults.standard.removeObject(forKey: Keys.apiKey)
         UserDefaults.standard.removeObject(forKey: Keys.model)
         UserDefaults.standard.removeObject(forKey: Keys.baseURL)
+        UserDefaults.standard.removeObject(forKey: Keys.heartRegenerationInterval)
+        UserDefaults.standard.removeObject(forKey: Keys.quizCostCoins)
+        UserDefaults.standard.removeObject(forKey: Keys.quizRewardCoins)
+        UserDefaults.standard.removeObject(forKey: Keys.consecutiveVictoryBonusEnabled)
     }
 }

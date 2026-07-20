@@ -66,7 +66,8 @@ final class QuizHistoryViewController: UIViewController {
         let totalSessions = sessions.count
         let totalPassed = sessions.filter { $0.resultTier != .failure }.count
         let totalCoinsEarned = sessions.reduce(0) { $0 + max(0, $1.coinsEarned) }
-        let totalCoinsSpent = sessions.count  // 1 coin per session
+        let costPerSession = DeveloperSettingsManager.shared.effectiveQuizCostCoins
+        let totalCoinsSpent = sessions.count * costPerSession
 
         let label = UILabel()
         label.frame = CGRect(x: 16, y: 10, width: container.bounds.width > 0 ? container.bounds.width - 32 : UIScreen.main.bounds.width - 32, height: 60)
