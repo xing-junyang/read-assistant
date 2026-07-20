@@ -430,7 +430,13 @@ final class SubwaySurferViewController: UIViewController {
         let carLength: Float = 2.2
         let carGap: Float = 0.5
         let carHeight: Float = 0.9
-        let carWidth: Float = trackWidth - 0.4
+
+        // 50% full-width, 50% per-lane with alternating lanes
+        let isFullWidth = Float.random(in: 0...1) < 0.5
+        let carWidth: Float = isFullWidth ? (trackWidth - 0.4) : 1.6
+        let baseLaneIdx = Int.random(in: 0..<lanePositions.count)
+        let baseLaneX: Float = isFullWidth ? 0 : lanePositions[baseLaneIdx]
+        let alternateLanes = !isFullWidth && Float.random(in: 0...1) < 0.5
 
         for i in 0..<carCount {
             let car = SCNNode()
@@ -462,8 +468,9 @@ final class SubwaySurferViewController: UIViewController {
             }
 
             let z = baseZ + Float(i) * (carLength + carGap)
-            car.position = SCNVector3(0, 0.1, z)
-            car.name = "traincar"
+            let carX: Float = alternateLanes ? ((i % 2 == 0) ? baseLaneX : lanePositions[(baseLaneIdx + 1) % lanePositions.count]) : baseLaneX
+            car.position = SCNVector3(carX, 0.1, z)
+            car.name = isFullWidth ? "traincar" : "traincar_lane"
             scene.rootNode.addChildNode(car)
             obstacleNodes.append(car)
 
@@ -471,7 +478,7 @@ final class SubwaySurferViewController: UIViewController {
             if i % 2 == 0 && coinNodes.count < 25 {
                 for c in 0..<3 {
                     let coin = makeCoin()
-                    coin.position = SCNVector3(lanePositions[currentLane], carHeight + 0.35, z + Float(c) * 0.5 - 0.5)
+                    coin.position = SCNVector3(carX, carHeight + 0.35, z + Float(c) * 0.5 - 0.5)
                     scene.rootNode.addChildNode(coin)
                     coinNodes.append(coin)
                 }
@@ -1484,11 +1491,11 @@ final class SubwaySurferViewController: UIViewController {
             let dx = abs(obs.position.x - px)
             let dz = abs(obs.position.z - pz)
 
-            // Train cars: wider X range, can run on top
-            let isTrainCar = obs.name == "traincar"
-            let xThreshold: Float = isTrainCar ? trackWidth / 2 : 0.7
+            // Train cars: wider X range for full-width, can run on top
+            let isTrainCar = obs.name == "traincar" || obs.name == "traincar_lane"
+            let xThreshold: Float = (obs.name == "traincar") ? trackWidth / 2 : ((obs.name == "traincar_lane") ? 0.85 : 0.7)
 
-            if dz < 0.65 && dx < xThreshold {
+            if dz < 0.65 && dx < xThreshold && obs.position.z > pz - 0.3 {
                 if isFlying { continue }
 
                 // Train cars: player can land on top

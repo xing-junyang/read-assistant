@@ -22,6 +22,8 @@ final class DeveloperSettingsManager {
         static let idiomWordleCostCoins = "developer_idiomWordleCostCoins"
         static let battlefieldCostCoins = "developer_battlefieldCostCoins"
         static let subwaySurferCostCoins = "developer_subwaySurferCostCoins"
+        static let flappyBirdCostCoins = "developer_flappyBirdCostCoins"
+        static let skillSnakeCostCoins = "developer_skillSnakeCostCoins"
     }
 
     private init() {}
@@ -63,6 +65,12 @@ final class DeveloperSettingsManager {
 
     /// Default coin cost to play Subway Surfer game.
     static let defaultSubwaySurferCostCoins: Int = 30
+
+    /// Default coin cost to play Flappy Bird game.
+    static let defaultFlappyBirdCostCoins: Int = 10
+
+    /// Default coin cost to play Skill Snake game.
+    static let defaultSkillSnakeCostCoins: Int = 15
 
     // MARK: - Stored Values (Developer Overrides)
 
@@ -299,6 +307,50 @@ final class DeveloperSettingsManager {
         return Self.defaultSubwaySurferCostCoins
     }
 
+    /// Coin cost to play one Flappy Bird game. Returns nil if default should be used.
+    var flappyBirdCostCoins: Int? {
+        get {
+            let key = Keys.flappyBirdCostCoins
+            guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
+            return UserDefaults.standard.integer(forKey: key)
+        }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: Keys.flappyBirdCostCoins)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.flappyBirdCostCoins)
+            }
+        }
+    }
+
+    /// Effective coin cost to play one Flappy Bird game.
+    var effectiveFlappyBirdCostCoins: Int {
+        if let stored = flappyBirdCostCoins, stored >= 0 { return stored }
+        return Self.defaultFlappyBirdCostCoins
+    }
+
+    /// Coin cost to play one Skill Snake game. Returns nil if default should be used.
+    var skillSnakeCostCoins: Int? {
+        get {
+            let key = Keys.skillSnakeCostCoins
+            guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
+            return UserDefaults.standard.integer(forKey: key)
+        }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: Keys.skillSnakeCostCoins)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.skillSnakeCostCoins)
+            }
+        }
+    }
+
+    /// Effective coin cost to play one Skill Snake game.
+    var effectiveSkillSnakeCostCoins: Int {
+        if let stored = skillSnakeCostCoins, stored >= 0 { return stored }
+        return Self.defaultSkillSnakeCostCoins
+    }
+
     // MARK: - Reset
 
     /// Clears all developer overrides, reverting to defaults.
@@ -315,5 +367,7 @@ final class DeveloperSettingsManager {
         UserDefaults.standard.removeObject(forKey: Keys.idiomWordleCostCoins)
         UserDefaults.standard.removeObject(forKey: Keys.battlefieldCostCoins)
         UserDefaults.standard.removeObject(forKey: Keys.subwaySurferCostCoins)
+        UserDefaults.standard.removeObject(forKey: Keys.flappyBirdCostCoins)
+        UserDefaults.standard.removeObject(forKey: Keys.skillSnakeCostCoins)
     }
 }

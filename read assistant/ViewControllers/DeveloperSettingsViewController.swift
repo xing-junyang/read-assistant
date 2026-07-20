@@ -125,6 +125,8 @@ final class DeveloperSettingsViewController: UIViewController {
         case setIdiomWordleCost
         case setBattlefieldCost
         case setSubwaySurferCost
+        case setFlappyBirdCost
+        case setSkillSnakeCost
 
         var title: String {
             switch self {
@@ -133,6 +135,8 @@ final class DeveloperSettingsViewController: UIViewController {
             case .setIdiomWordleCost: return "成语猜猜乐消耗金币数"
             case .setBattlefieldCost: return "战地枪战消耗金币数"
             case .setSubwaySurferCost: return "地铁跑酷消耗金币数"
+            case .setFlappyBirdCost: return "Flappy Bird消耗金币数"
+            case .setSkillSnakeCost: return "技能贪吃蛇消耗金币数"
             }
         }
     }
@@ -742,6 +746,18 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
             cell.detailTextLabel?.text = "当前: \(cost)💰\(hasOverride ? " [自定义]" : " (默认)")"
             cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
             cell.accessoryType = .disclosureIndicator
+        case .setFlappyBirdCost:
+            let cost = devSettings.effectiveFlappyBirdCostCoins
+            let hasOverride = devSettings.flappyBirdCostCoins != nil
+            cell.detailTextLabel?.text = "当前: \(cost)💰\(hasOverride ? " [自定义]" : " (默认)")"
+            cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
+            cell.accessoryType = .disclosureIndicator
+        case .setSkillSnakeCost:
+            let cost = devSettings.effectiveSkillSnakeCostCoins
+            let hasOverride = devSettings.skillSnakeCostCoins != nil
+            cell.detailTextLabel?.text = "当前: \(cost)💰\(hasOverride ? " [自定义]" : " (默认)")"
+            cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
+            cell.accessoryType = .disclosureIndicator
         }
 
         cell.backgroundColor = .cardBackground
@@ -829,6 +845,38 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
                 }
                 self?.tableView.reloadData()
                 self?.showAlert(title: "完成", message: "地铁跑酷消耗已设置为 \(value)💰")
+            }
+
+        case .setFlappyBirdCost:
+            let currentCost = devSettings.effectiveFlappyBirdCostCoins
+            showNumberInput(title: "Flappy Bird消耗金币数", message: "当前: \(currentCost)💰\n默认: \(DeveloperSettingsManager.defaultFlappyBirdCostCoins)💰", currentValue: "\(currentCost)") { [weak self] value in
+                guard value >= 0 else {
+                    self?.showAlert(title: "错误", message: "消耗金币数不能为负数")
+                    return
+                }
+                if value == DeveloperSettingsManager.defaultFlappyBirdCostCoins {
+                    devSettings.flappyBirdCostCoins = nil
+                } else {
+                    devSettings.flappyBirdCostCoins = value
+                }
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "Flappy Bird消耗已设置为 \(value)💰")
+            }
+
+        case .setSkillSnakeCost:
+            let currentCost = devSettings.effectiveSkillSnakeCostCoins
+            showNumberInput(title: "技能贪吃蛇消耗金币数", message: "当前: \(currentCost)💰\n默认: \(DeveloperSettingsManager.defaultSkillSnakeCostCoins)💰", currentValue: "\(currentCost)") { [weak self] value in
+                guard value >= 0 else {
+                    self?.showAlert(title: "错误", message: "消耗金币数不能为负数")
+                    return
+                }
+                if value == DeveloperSettingsManager.defaultSkillSnakeCostCoins {
+                    devSettings.skillSnakeCostCoins = nil
+                } else {
+                    devSettings.skillSnakeCostCoins = value
+                }
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "技能贪吃蛇消耗已设置为 \(value)💰")
             }
         }
     }

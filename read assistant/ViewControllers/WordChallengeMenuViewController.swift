@@ -95,7 +95,7 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
         case .quiz: return 2       // 词语闯关, 闯关历史
         case .idiom: return 3      // 成语猜猜乐, 成语本, 导入成语
         case .minigames: return 2  // 汉字拼图, 汉字消消乐
-        case .battlefield: return 2  // 战地枪战, 地铁跑酷
+        case .battlefield: return 4  // 战地枪战, 地铁跑酷, Flappy Bird, 技能贪吃蛇
         }
     }
 
@@ -186,10 +186,18 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
             cell.textLabel?.text = "🎮 战地枪战"
             let costCoins = DeveloperSettingsManager.shared.effectiveBattlefieldCostCoins
             cell.detailTextLabel?.text = "3D我的世界风格射击游戏，对战Bot，消耗\(costCoins)金币"
-        default:
+        case 1:
             cell.textLabel?.text = "🏃 地铁跑酷"
             let costCoins = DeveloperSettingsManager.shared.effectiveSubwaySurferCostCoins
             cell.detailTextLabel?.text = "3D我的世界风格跑酷，苦力怕追逐，消耗\(costCoins)金币"
+        case 2:
+            cell.textLabel?.text = "🐦 Flappy Bird"
+            let costCoins = DeveloperSettingsManager.shared.effectiveFlappyBirdCostCoins
+            cell.detailTextLabel?.text = "经典像素小鸟飞行游戏，消耗\(costCoins)金币"
+        default:
+            cell.textLabel?.text = "🐍 技能贪吃蛇"
+            let costCoins = DeveloperSettingsManager.shared.effectiveSkillSnakeCostCoins
+            cell.detailTextLabel?.text = "经典贪吃蛇搭载多种技能，消耗\(costCoins)金币"
         }
     }
 
@@ -279,9 +287,21 @@ extension WordChallengeMenuViewController: UITableViewDelegate {
                 vc.modalPresentationStyle = .fullScreen
                 self?.present(vc, animated: true)
             }
-        default:
+        case 1:
             startGameWithCoinCheck(gameName: "地铁跑酷", costCoins: DeveloperSettingsManager.shared.effectiveSubwaySurferCostCoins) { [weak self] in
                 let vc = SubwaySurferViewController()
+                vc.modalPresentationStyle = .fullScreen
+                self?.present(vc, animated: true)
+            }
+        case 2:
+            startGameWithCoinCheck(gameName: "Flappy Bird", costCoins: DeveloperSettingsManager.shared.effectiveFlappyBirdCostCoins) { [weak self] in
+                let vc = FlappyBirdGameViewController()
+                vc.modalPresentationStyle = .fullScreen
+                self?.present(vc, animated: true)
+            }
+        default:
+            startGameWithCoinCheck(gameName: "技能贪吃蛇", costCoins: DeveloperSettingsManager.shared.effectiveSkillSnakeCostCoins) { [weak self] in
+                let vc = SkillSnakeGameViewController()
                 vc.modalPresentationStyle = .fullScreen
                 self?.present(vc, animated: true)
             }
