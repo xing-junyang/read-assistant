@@ -95,6 +95,26 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
+    // MARK: - Orientation Support
+    /// Allows BattlefieldGameViewController to force landscape.
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        if let root = window?.rootViewController {
+            if let presented = root.presentedViewController {
+                return presented.supportedInterfaceOrientations
+            }
+            if let nav = root as? UINavigationController, let top = nav.topViewController {
+                return top.supportedInterfaceOrientations
+            }
+            if let tab = root as? UITabBarController, let sel = tab.selectedViewController {
+                if let nav = sel as? UINavigationController, let top = nav.topViewController {
+                    return top.supportedInterfaceOrientations
+                }
+                return sel.supportedInterfaceOrientations
+            }
+        }
+        return .all
+    }
+
     func applicationWillResignActive(_ application: UIApplication) {
         // Sent when the application is about to move from active to inactive state.
     }

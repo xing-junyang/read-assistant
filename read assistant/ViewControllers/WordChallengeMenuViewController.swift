@@ -71,6 +71,7 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
         case quiz        // 词语闯关, 闯关历史
         case idiom       // 成语猜猜乐, 成语本, 导入成语
         case minigames   // 汉字拼图, 汉字消消乐
+        case battlefield // 战地枪战
 
         var title: String {
             switch self {
@@ -78,6 +79,7 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
             case .quiz: return "词语闯关"
             case .idiom: return "成语猜猜乐"
             case .minigames: return "其他小游戏"
+            case .battlefield: return "休闲娱乐"
             }
         }
     }
@@ -93,6 +95,7 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
         case .quiz: return 2       // 词语闯关, 闯关历史
         case .idiom: return 3      // 成语猜猜乐, 成语本, 导入成语
         case .minigames: return 2  // 汉字拼图, 汉字消消乐
+        case .battlefield: return 1  // 战地枪战
         }
     }
 
@@ -121,6 +124,8 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
             configureIdiomCell(cell, at: indexPath.row)
         case .minigames:
             configureMinigameCell(cell, at: indexPath.row)
+        case .battlefield:
+            configureBattlefieldCell(cell, at: indexPath.row)
         }
 
         return cell
@@ -175,6 +180,12 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
         }
     }
 
+    private func configureBattlefieldCell(_ cell: UITableViewCell, at row: Int) {
+        cell.textLabel?.text = "🎮 战地枪战"
+        let costCoins = DeveloperSettingsManager.shared.effectiveBattlefieldCostCoins
+        cell.detailTextLabel?.text = "3D我的世界风格射击游戏，对战Bot，消耗\(costCoins)金币"
+    }
+
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         return MenuSection(rawValue: section)?.title
     }
@@ -196,6 +207,8 @@ extension WordChallengeMenuViewController: UITableViewDelegate {
             handleIdiomTap(at: indexPath.row)
         case .minigames:
             handleMinigameTap(at: indexPath.row)
+        case .battlefield:
+            handleBattlefieldTap(at: indexPath.row)
         }
     }
 
@@ -248,6 +261,14 @@ extension WordChallengeMenuViewController: UITableViewDelegate {
                 let vc = CharacterMatchViewController()
                 self?.navigationController?.pushViewController(vc, animated: true)
             }
+        }
+    }
+
+    private func handleBattlefieldTap(at row: Int) {
+        startGameWithCoinCheck(gameName: "战地枪战", costCoins: DeveloperSettingsManager.shared.effectiveBattlefieldCostCoins) { [weak self] in
+            let vc = BattlefieldGameViewController()
+            vc.modalPresentationStyle = .fullScreen
+            self?.present(vc, animated: true)
         }
     }
 

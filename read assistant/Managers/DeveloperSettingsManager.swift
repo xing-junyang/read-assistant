@@ -20,6 +20,7 @@ final class DeveloperSettingsManager {
         static let idiomChainCostCoins = "developer_idiomChainCostCoins"
         static let characterMatchCostCoins = "developer_characterMatchCostCoins"
         static let idiomWordleCostCoins = "developer_idiomWordleCostCoins"
+        static let battlefieldCostCoins = "developer_battlefieldCostCoins"
     }
 
     private init() {}
@@ -55,6 +56,9 @@ final class DeveloperSettingsManager {
 
     /// Default coin cost to play Idiom Wordle game.
     static let defaultIdiomWordleCostCoins: Int = 15
+
+    /// Default coin cost to play Battlefield game.
+    static let defaultBattlefieldCostCoins: Int = 20
 
     // MARK: - Stored Values (Developer Overrides)
 
@@ -247,6 +251,28 @@ final class DeveloperSettingsManager {
         return Self.defaultIdiomWordleCostCoins
     }
 
+    /// Coin cost to play one Battlefield game. Returns nil if default should be used.
+    var battlefieldCostCoins: Int? {
+        get {
+            let key = Keys.battlefieldCostCoins
+            guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
+            return UserDefaults.standard.integer(forKey: key)
+        }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: Keys.battlefieldCostCoins)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.battlefieldCostCoins)
+            }
+        }
+    }
+
+    /// Effective coin cost to play one Battlefield game.
+    var effectiveBattlefieldCostCoins: Int {
+        if let stored = battlefieldCostCoins, stored >= 0 { return stored }
+        return Self.defaultBattlefieldCostCoins
+    }
+
     // MARK: - Reset
 
     /// Clears all developer overrides, reverting to defaults.
@@ -261,5 +287,6 @@ final class DeveloperSettingsManager {
         UserDefaults.standard.removeObject(forKey: Keys.idiomChainCostCoins)
         UserDefaults.standard.removeObject(forKey: Keys.characterMatchCostCoins)
         UserDefaults.standard.removeObject(forKey: Keys.idiomWordleCostCoins)
+        UserDefaults.standard.removeObject(forKey: Keys.battlefieldCostCoins)
     }
 }
