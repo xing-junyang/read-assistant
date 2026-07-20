@@ -3,6 +3,7 @@ import UIKit
 // MARK: - Quiz View Controller
 /// Handles the quiz gameplay: shows questions one at a time,
 /// two question types (看字选拼音 and 看拼音选字), single choice 4 options.
+/// Correct answers auto-advance to the next question after a short delay.
 final class QuizViewController: UIViewController {
 
     // MARK: - Properties
@@ -11,6 +12,11 @@ final class QuizViewController: UIViewController {
     private var currentIndex = 0
     private var selectedAnswerIndex: Int? = nil
     private let isSmallScreen = UIScreen.main.bounds.height <= 667  // iPhone SE, 6, 7, 8
+
+    /// Delay before auto-advancing after a correct answer (seconds).
+    private let autoAdvanceDelay: TimeInterval = 0.6
+    /// Prevents double-tap during auto-advance transition.
+    private var isAutoAdvancing = false
 
     // MARK: - Subviews
     private let progressBar = UIProgressView(progressViewStyle: .bar)
@@ -190,59 +196,74 @@ final class QuizViewController: UIViewController {
     }
 
     // MARK: - Question Display
-    private func showQuestion(at index: Int) {
+    private func showQuestion(at index: Int, animated: Bool = true) {
         guard index < questions.count else { return }
         currentIndex = index
         selectedAnswerIndex = nil
+        isAutoAdvancing = false
 
         let question = questions[index]
 
-        // Update progress
-        progressBar.progress = Float(index) / Float(questions.count)
-        progressLabel.text = "\(index + 1) / \(questions.count)"
+        let applyChanges = {
+            // Update progress
+            self.progressBar.progress = Float(index) / Float(self.questions.count)
+            self.progressLabel.text = "\(index + 1) / \(self.questions.count)"
 
-        // Reset option buttons
-        for button in optionButtons {
-            button.backgroundColor = defaultOptionColor
-            button.layer.borderColor = UIColor.separator.cgColor
-            button.setTitleColor(.textPrimary, for: .normal)
-            button.isEnabled = true
-            button.alpha = 1.0
-        }
-        nextButton.isHidden = true
-
-        // Configure question based on type
-        if question.questionType == .characterToPinyin {
-            // 看字选拼音
-            questionTypeLabel.text = "📖 看字选拼音"
-            questionTextLabel.text = question.sourceItem.correctText
-            questionTextLabel.font = UIFont.systemFont(ofSize: isSmallScreen ? 36 : 48, weight: .bold)
-            pinyinLabel.isHidden = false
-            pinyinLabel.text = "请选择正确的拼音"
-        } else {
-            // 看拼音选字
-            questionTypeLabel.text = "🔤 看拼音选字"
-            // Show tone-marked pinyin as the prompt
-            questionTextLabel.text = question.sourceItem.correctPinyin
-            questionTextLabel.font = UIFont.systemFont(ofSize: isSmallScreen ? 28 : 36, weight: .bold)
-            pinyinLabel.isHidden = false
-            pinyinLabel.text = "请选择正确的汉字"
-        }
-
-        // Set option texts with shuffled order
-        for i in 0..<4 {
-            if i < question.options.count {
-                optionButtons[i].setTitle(question.options[i], for: .normal)
-                optionButtons[i].isHidden = false
-            } else {
-                optionButtons[i].isHidden = true
+            // Reset option buttons
+            for button in self.optionButtons {
+                button.backgroundColor = self.defaultOptionColor
+                button.layer.borderColor = UIColor.separator.cgColor
+                button.setTitleColor(.textPrimary, for: .normal)
+                button.isEnabled = true
+                button.alpha = 1.0
             }
+            self.nextButton.isHidden = true
+
+            // Configure question based on type
+            if question.questionType == .characterToPinyin {
+                // 看字选拼音
+                self.questionTypeLabel.text = "📖 看字选拼音"
+                self.questionTextLabel.text = question.sourceItem.correctText
+                self.questionTextLabel.font = UIFont.systemFont(ofSize: self.isSmallScreen ? 36 : 48, weight: .bold)
+                self.pinyinLabel.isHidden = false
+                self.pinyinLabel.text = "请选择正确的拼音"
+            } else {
+                // 看拼音选字
+                self.questionTypeLabel.text = "🔤 看拼音选字"
+                // Show tone-marked pinyin as the prompt
+                self.questionTextLabel.text = question.sourceItem.correctPinyin
+                self.questionTextLabel.font = UIFont.systemFont(ofSize: self.isSmallScreen ? 28 : 36, weight: .bold)
+                self.pinyinLabel.isHidden = false
+                self.pinyinLabel.text = "请选择正确的汉字"
+            }
+
+            // Set option texts with shuffled order
+            for i in 0..<4 {
+                if i < question.options.count {
+                    self.optionButtons[i].setTitle(question.options[i], for: .normal)
+                    self.optionButtons[i].isHidden = false
+                } else {
+                    self.optionButtons[i].isHidden = true
+                }
+            }
+        }
+
+        if animated {
+            UIView.transition(with: questionContentView, duration: 0.25, options: .transitionCrossDissolve, animations: {
+                applyChanges()
+            }, completion: nil)
+
+            UIView.transition(with: optionsStack, duration: 0.25, options: .transitionCrossDissolve, animations: {
+                // Options are updated inside applyChanges
+            }, completion: nil)
+        } else {
+            applyChanges()
         }
     }
 
     // MARK: - Actions
     @objc private func optionTapped(_ sender: UIButton) {
-        guard selectedAnswerIndex == nil else { return }
+        guard selectedAnswerIndex == nil, !isAutoAdvancing else { return }
 
         let selectedIndex = sender.tag
         selectedAnswerIndex = selectedIndex
@@ -252,6 +273,15 @@ final class QuizViewController: UIViewController {
 
         // Record answer
         quizSession.userAnswers[currentIndex] = selectedIndex
+
+        // Sound effect and haptic feedback
+        if isCorrect {
+            SoundEffectManager.shared.playQuizCorrectSound()
+            triggerHaptic(.success)
+        } else {
+            SoundEffectManager.shared.playQuizIncorrectSound()
+            triggerHaptic(.error)
+        }
 
         // Highlight correct and wrong answers
         for (i, button) in optionButtons.enumerated() {
@@ -272,27 +302,49 @@ final class QuizViewController: UIViewController {
             }
         }
 
-        // Show next/finish button
-        if currentIndex < questions.count - 1 {
-            nextButton.setTitle("下一题", for: .normal)
+        if isCorrect {
+            // Auto-advance after a short delay on correct answer
+            isAutoAdvancing = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + autoAdvanceDelay) { [weak self] in
+                guard let self = self else { return }
+                self.advanceToNext()
+            }
         } else {
-            nextButton.setTitle("查看结果", for: .normal)
-        }
-        nextButton.isHidden = false
+            // Show next/finish button for incorrect answers
+            if currentIndex < questions.count - 1 {
+                nextButton.setTitle("下一题", for: .normal)
+            } else {
+                nextButton.setTitle("查看结果", for: .normal)
+            }
+            nextButton.isHidden = false
 
-        // Animate next button appearance
-        nextButton.alpha = 0
-        UIView.animate(withDuration: 0.3) {
-            self.nextButton.alpha = 1
+            // Animate next button appearance
+            nextButton.alpha = 0
+            UIView.animate(withDuration: 0.3) {
+                self.nextButton.alpha = 1
+            }
         }
     }
 
-    @objc private func nextTapped() {
+    private func advanceToNext() {
+        isAutoAdvancing = false
         if currentIndex < questions.count - 1 {
             showQuestion(at: currentIndex + 1)
         } else {
             finishQuiz()
         }
+    }
+
+    /// Triggers haptic feedback compatible with iOS 10+.
+    private func triggerHaptic(_ type: UINotificationFeedbackGenerator.FeedbackType) {
+        let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
+        generator.notificationOccurred(type)
+    }
+
+    @objc private func nextTapped() {
+        guard !isAutoAdvancing else { return }
+        advanceToNext()
     }
 
     // MARK: - Finish

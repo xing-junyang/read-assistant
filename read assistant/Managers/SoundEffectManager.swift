@@ -41,6 +41,30 @@ final class SoundEffectManager {
         playSystemSound(1104)
     }
 
+    /// Plays a correct answer sound for quiz.
+    func playQuizCorrectSound() {
+        // SystemSoundID 1057: pleasant ascending "Tink" tone
+        playSystemSound(1057)
+    }
+
+    /// Plays an incorrect answer sound for quiz.
+    func playQuizIncorrectSound() {
+        // SystemSoundID 1053: short descending tone
+        playSystemSound(1053)
+    }
+
+    /// Plays a quiz level completion / victory sound.
+    func playQuizVictorySound() {
+        // SystemSoundID 1025: ascending chime
+        playSystemSound(1025)
+    }
+
+    /// Plays a quiz failure sound.
+    func playQuizFailureSound() {
+        // SystemSoundID 1006: low alert tone
+        playSystemSound(1006)
+    }
+
     // MARK: - Private
 
     private func playSystemSound(_ soundID: SystemSoundID) {
