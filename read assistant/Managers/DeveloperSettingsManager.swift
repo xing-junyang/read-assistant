@@ -21,6 +21,7 @@ final class DeveloperSettingsManager {
         static let characterMatchCostCoins = "developer_characterMatchCostCoins"
         static let idiomWordleCostCoins = "developer_idiomWordleCostCoins"
         static let battlefieldCostCoins = "developer_battlefieldCostCoins"
+        static let subwaySurferCostCoins = "developer_subwaySurferCostCoins"
     }
 
     private init() {}
@@ -59,6 +60,9 @@ final class DeveloperSettingsManager {
 
     /// Default coin cost to play Battlefield game.
     static let defaultBattlefieldCostCoins: Int = 20
+
+    /// Default coin cost to play Subway Surfer game.
+    static let defaultSubwaySurferCostCoins: Int = 30
 
     // MARK: - Stored Values (Developer Overrides)
 
@@ -273,6 +277,28 @@ final class DeveloperSettingsManager {
         return Self.defaultBattlefieldCostCoins
     }
 
+    /// Coin cost to play one Subway Surfer game. Returns nil if default should be used.
+    var subwaySurferCostCoins: Int? {
+        get {
+            let key = Keys.subwaySurferCostCoins
+            guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
+            return UserDefaults.standard.integer(forKey: key)
+        }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: Keys.subwaySurferCostCoins)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.subwaySurferCostCoins)
+            }
+        }
+    }
+
+    /// Effective coin cost to play one Subway Surfer game.
+    var effectiveSubwaySurferCostCoins: Int {
+        if let stored = subwaySurferCostCoins, stored >= 0 { return stored }
+        return Self.defaultSubwaySurferCostCoins
+    }
+
     // MARK: - Reset
 
     /// Clears all developer overrides, reverting to defaults.
@@ -288,5 +314,6 @@ final class DeveloperSettingsManager {
         UserDefaults.standard.removeObject(forKey: Keys.characterMatchCostCoins)
         UserDefaults.standard.removeObject(forKey: Keys.idiomWordleCostCoins)
         UserDefaults.standard.removeObject(forKey: Keys.battlefieldCostCoins)
+        UserDefaults.standard.removeObject(forKey: Keys.subwaySurferCostCoins)
     }
 }

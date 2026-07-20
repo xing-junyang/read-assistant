@@ -124,6 +124,7 @@ final class DeveloperSettingsViewController: UIViewController {
         case setCharacterMatchCost
         case setIdiomWordleCost
         case setBattlefieldCost
+        case setSubwaySurferCost
 
         var title: String {
             switch self {
@@ -131,6 +132,7 @@ final class DeveloperSettingsViewController: UIViewController {
             case .setCharacterMatchCost: return "汉字消消乐消耗金币数"
             case .setIdiomWordleCost: return "成语猜猜乐消耗金币数"
             case .setBattlefieldCost: return "战地枪战消耗金币数"
+            case .setSubwaySurferCost: return "地铁跑酷消耗金币数"
             }
         }
     }
@@ -734,6 +736,12 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
             cell.detailTextLabel?.text = "当前: \(cost)💰\(hasOverride ? " [自定义]" : " (默认)")"
             cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
             cell.accessoryType = .disclosureIndicator
+        case .setSubwaySurferCost:
+            let cost = devSettings.effectiveSubwaySurferCostCoins
+            let hasOverride = devSettings.subwaySurferCostCoins != nil
+            cell.detailTextLabel?.text = "当前: \(cost)💰\(hasOverride ? " [自定义]" : " (默认)")"
+            cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
+            cell.accessoryType = .disclosureIndicator
         }
 
         cell.backgroundColor = .cardBackground
@@ -805,6 +813,22 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
                 }
                 self?.tableView.reloadData()
                 self?.showAlert(title: "完成", message: "战地枪战消耗已设置为 \(value)💰")
+            }
+
+        case .setSubwaySurferCost:
+            let currentCost = devSettings.effectiveSubwaySurferCostCoins
+            showNumberInput(title: "地铁跑酷消耗金币数", message: "当前: \(currentCost)💰\n默认: \(DeveloperSettingsManager.defaultSubwaySurferCostCoins)💰", currentValue: "\(currentCost)") { [weak self] value in
+                guard value >= 0 else {
+                    self?.showAlert(title: "错误", message: "消耗金币数不能为负数")
+                    return
+                }
+                if value == DeveloperSettingsManager.defaultSubwaySurferCostCoins {
+                    devSettings.subwaySurferCostCoins = nil
+                } else {
+                    devSettings.subwaySurferCostCoins = value
+                }
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "地铁跑酷消耗已设置为 \(value)💰")
             }
         }
     }

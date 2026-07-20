@@ -95,7 +95,7 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
         case .quiz: return 2       // 词语闯关, 闯关历史
         case .idiom: return 3      // 成语猜猜乐, 成语本, 导入成语
         case .minigames: return 2  // 汉字拼图, 汉字消消乐
-        case .battlefield: return 1  // 战地枪战
+        case .battlefield: return 2  // 战地枪战, 地铁跑酷
         }
     }
 
@@ -181,9 +181,16 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
     }
 
     private func configureBattlefieldCell(_ cell: UITableViewCell, at row: Int) {
-        cell.textLabel?.text = "🎮 战地枪战"
-        let costCoins = DeveloperSettingsManager.shared.effectiveBattlefieldCostCoins
-        cell.detailTextLabel?.text = "3D我的世界风格射击游戏，对战Bot，消耗\(costCoins)金币"
+        switch row {
+        case 0:
+            cell.textLabel?.text = "🎮 战地枪战"
+            let costCoins = DeveloperSettingsManager.shared.effectiveBattlefieldCostCoins
+            cell.detailTextLabel?.text = "3D我的世界风格射击游戏，对战Bot，消耗\(costCoins)金币"
+        default:
+            cell.textLabel?.text = "🏃 地铁跑酷"
+            let costCoins = DeveloperSettingsManager.shared.effectiveSubwaySurferCostCoins
+            cell.detailTextLabel?.text = "3D我的世界风格跑酷，苦力怕追逐，消耗\(costCoins)金币"
+        }
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
@@ -265,10 +272,19 @@ extension WordChallengeMenuViewController: UITableViewDelegate {
     }
 
     private func handleBattlefieldTap(at row: Int) {
-        startGameWithCoinCheck(gameName: "战地枪战", costCoins: DeveloperSettingsManager.shared.effectiveBattlefieldCostCoins) { [weak self] in
-            let vc = BattlefieldGameViewController()
-            vc.modalPresentationStyle = .fullScreen
-            self?.present(vc, animated: true)
+        switch row {
+        case 0:
+            startGameWithCoinCheck(gameName: "战地枪战", costCoins: DeveloperSettingsManager.shared.effectiveBattlefieldCostCoins) { [weak self] in
+                let vc = BattlefieldGameViewController()
+                vc.modalPresentationStyle = .fullScreen
+                self?.present(vc, animated: true)
+            }
+        default:
+            startGameWithCoinCheck(gameName: "地铁跑酷", costCoins: DeveloperSettingsManager.shared.effectiveSubwaySurferCostCoins) { [weak self] in
+                let vc = SubwaySurferViewController()
+                vc.modalPresentationStyle = .fullScreen
+                self?.present(vc, animated: true)
+            }
         }
     }
 
