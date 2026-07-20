@@ -66,12 +66,34 @@ final class WordChallengeMenuViewController: UIViewController {
 
 // MARK: - UITableViewDataSource
 extension WordChallengeMenuViewController: UITableViewDataSource {
+    private enum MenuSection: Int, CaseIterable {
+        case wrongBook   // 错题本
+        case quiz        // 词语闯关, 闯关历史
+        case idiom       // 成语猜猜乐, 成语本, 导入成语
+        case minigames   // 汉字拼图, 汉字消消乐
+
+        var title: String {
+            switch self {
+            case .wrongBook: return "错题本"
+            case .quiz: return "词语闯关"
+            case .idiom: return "成语猜猜乐"
+            case .minigames: return "其他小游戏"
+            }
+        }
+    }
+
     func numberOfSections(in tableView: UITableView) -> Int {
-        return 1
+        return MenuSection.allCases.count
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return 5
+        guard let sectionType = MenuSection(rawValue: section) else { return 0 }
+        switch sectionType {
+        case .wrongBook: return 1  // 错题本
+        case .quiz: return 2       // 词语闯关, 闯关历史
+        case .idiom: return 3      // 成语猜猜乐, 成语本, 导入成语
+        case .minigames: return 2  // 汉字拼图, 汉字消消乐
+        }
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -88,34 +110,73 @@ extension WordChallengeMenuViewController: UITableViewDataSource {
         cell.detailTextLabel?.font = UIFont.systemFont(ofSize: 13)
         cell.detailTextLabel?.textColor = .textSecondary
 
-        if indexPath.row == 0 {
-            cell.textLabel?.text = "📝 错题本"
-            let count = WrongAnswerBookManager.shared.wrongAnswers.count
-            cell.detailTextLabel?.text = count > 0 ? "已收集 \(count) 个错题" : "查看读错和遗漏的字词"
-        } else if indexPath.row == 1 {
-            cell.textLabel?.text = "🎯 词语闯关"
-            let totalLevels = WrongAnswerBookManager.shared.totalLevelsCompleted
-            let costCoins = DeveloperSettingsManager.shared.effectiveQuizCostCoins
-            cell.detailTextLabel?.text = totalLevels > 0 ? "已闯 \(totalLevels) 关 (每次消耗\(costCoins)金币)" : "开始挑战，巩固错题 (每次消耗\(costCoins)金币)"
-        } else if indexPath.row == 2 {
-            cell.textLabel?.text = "📊 闯关历史"
-            let historyCount = WrongAnswerBookManager.shared.quizProgress.sessionHistory.count
-            cell.detailTextLabel?.text = historyCount > 0 ? "共 \(historyCount) 次闯关记录" : "查看闯关成绩和金币记录"
-        } else if indexPath.row == 3 {
-            cell.textLabel?.text = "汉字拼图"
-            let costCoins = DeveloperSettingsManager.shared.effectiveIdiomChainCostCoins
-            cell.detailTextLabel?.text = "还原打乱的汉字顺序，消耗\(costCoins)金币"
-        } else {
-            cell.textLabel?.text = "汉字消消乐"
-            let costCoins = DeveloperSettingsManager.shared.effectiveCharacterMatchCostCoins
-            cell.detailTextLabel?.text = "翻牌配对汉字与拼音，消耗\(costCoins)金币"
+        guard let sectionType = MenuSection(rawValue: indexPath.section) else { return cell }
+
+        switch sectionType {
+        case .wrongBook:
+            configureWrongBookCell(cell, at: indexPath.row)
+        case .quiz:
+            configureQuizCell(cell, at: indexPath.row)
+        case .idiom:
+            configureIdiomCell(cell, at: indexPath.row)
+        case .minigames:
+            configureMinigameCell(cell, at: indexPath.row)
         }
 
         return cell
     }
 
+    private func configureWrongBookCell(_ cell: UITableViewCell, at row: Int) {
+        cell.textLabel?.text = "📝 错题本"
+        let count = WrongAnswerBookManager.shared.wrongAnswers.count
+        cell.detailTextLabel?.text = count > 0 ? "已收集 \(count) 个错题" : "查看读错和遗漏的字词"
+    }
+
+    private func configureQuizCell(_ cell: UITableViewCell, at row: Int) {
+        switch row {
+        case 0:
+            cell.textLabel?.text = "🎯 词语闯关"
+            let totalLevels = WrongAnswerBookManager.shared.totalLevelsCompleted
+            let costCoins = DeveloperSettingsManager.shared.effectiveQuizCostCoins
+            cell.detailTextLabel?.text = totalLevels > 0 ? "已闯 \(totalLevels) 关 (每次消耗\(costCoins)金币)" : "开始挑战，巩固错题 (每次消耗\(costCoins)金币)"
+        default:
+            cell.textLabel?.text = "📊 闯关历史"
+            let historyCount = WrongAnswerBookManager.shared.quizProgress.sessionHistory.count
+            cell.detailTextLabel?.text = historyCount > 0 ? "共 \(historyCount) 次闯关记录" : "查看闯关成绩和金币记录"
+        }
+    }
+
+    private func configureIdiomCell(_ cell: UITableViewCell, at row: Int) {
+        switch row {
+        case 0:
+            cell.textLabel?.text = "成语猜猜乐"
+            let costCoins = DeveloperSettingsManager.shared.effectiveIdiomWordleCostCoins
+            cell.detailTextLabel?.text = "中文版Wordle猜成语，消耗\(costCoins)金币"
+        case 1:
+            cell.textLabel?.text = "📖 成语本"
+            let count = CustomIdiomManager.shared.customIdioms.count
+            cell.detailTextLabel?.text = count > 0 ? "已导入 \(count) 个成语" : "管理和导入四字成语"
+        default:
+            cell.textLabel?.text = "📥 导入成语"
+            cell.detailTextLabel?.text = "批量导入四字成语到词库"
+        }
+    }
+
+    private func configureMinigameCell(_ cell: UITableViewCell, at row: Int) {
+        switch row {
+        case 0:
+            cell.textLabel?.text = "汉字拼图"
+            let costCoins = DeveloperSettingsManager.shared.effectiveIdiomChainCostCoins
+            cell.detailTextLabel?.text = "还原打乱的汉字顺序，消耗\(costCoins)金币"
+        default:
+            cell.textLabel?.text = "汉字消消乐"
+            let costCoins = DeveloperSettingsManager.shared.effectiveCharacterMatchCostCoins
+            cell.detailTextLabel?.text = "翻牌配对汉字与拼音，消耗\(costCoins)金币"
+        }
+    }
+
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        return "功能"
+        return MenuSection(rawValue: section)?.title
     }
 }
 
@@ -124,38 +185,94 @@ extension WordChallengeMenuViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
 
-        if indexPath.row == 0 {
-            // 错题本 - sync first, then show list
-            let loadingAlert = UIAlertController(title: "更新中...", message: "正在从阅读历史同步错题", preferredStyle: .alert)
-            present(loadingAlert, animated: true)
+        guard let sectionType = MenuSection(rawValue: indexPath.section) else { return }
 
-            WrongAnswerBookManager.shared.syncWrongAnswers()
-            WrongAnswerBookManager.shared.waitForSync { [weak self] in
-                loadingAlert.dismiss(animated: true) {
-                    let vc = WrongAnswerBookViewController()
-                    self?.navigationController?.pushViewController(vc, animated: true)
-                }
+        switch sectionType {
+        case .wrongBook:
+            handleWrongBookTap()
+        case .quiz:
+            handleQuizTap(at: indexPath.row)
+        case .idiom:
+            handleIdiomTap(at: indexPath.row)
+        case .minigames:
+            handleMinigameTap(at: indexPath.row)
+        }
+    }
+
+    private func handleWrongBookTap() {
+        let loadingAlert = UIAlertController(title: "更新中...", message: "正在从阅读历史同步错题", preferredStyle: .alert)
+        present(loadingAlert, animated: true)
+        WrongAnswerBookManager.shared.syncWrongAnswers()
+        WrongAnswerBookManager.shared.waitForSync { [weak self] in
+            loadingAlert.dismiss(animated: true) {
+                let vc = WrongAnswerBookViewController()
+                self?.navigationController?.pushViewController(vc, animated: true)
             }
-        } else if indexPath.row == 1 {
-            // 词语闯关 - check coins first, then confirm
+        }
+    }
+
+    private func handleQuizTap(at row: Int) {
+        switch row {
+        case 0:
             startQuizWithCoinCheck()
-        } else if indexPath.row == 2 {
-            // 闯关历史
+        default:
             let historyVC = QuizHistoryViewController()
             navigationController?.pushViewController(historyVC, animated: true)
-        } else if indexPath.row == 3 {
-            // 汉字拼图
+        }
+    }
+
+    private func handleIdiomTap(at row: Int) {
+        switch row {
+        case 0:
+            startGameWithCoinCheck(gameName: "成语猜猜乐", costCoins: DeveloperSettingsManager.shared.effectiveIdiomWordleCostCoins) { [weak self] in
+                let vc = IdiomWordleViewController()
+                self?.navigationController?.pushViewController(vc, animated: true)
+            }
+        case 1:
+            let vc = IdiomBookViewController()
+            navigationController?.pushViewController(vc, animated: true)
+        default:
+            showImportIdiomDialog()
+        }
+    }
+
+    private func handleMinigameTap(at row: Int) {
+        switch row {
+        case 0:
             startGameWithCoinCheck(gameName: "汉字拼图", costCoins: DeveloperSettingsManager.shared.effectiveIdiomChainCostCoins) { [weak self] in
                 let vc = CharacterScrambleViewController()
                 self?.navigationController?.pushViewController(vc, animated: true)
             }
-        } else {
-            // 汉字消消乐
+        default:
             startGameWithCoinCheck(gameName: "汉字消消乐", costCoins: DeveloperSettingsManager.shared.effectiveCharacterMatchCostCoins) { [weak self] in
                 let vc = CharacterMatchViewController()
                 self?.navigationController?.pushViewController(vc, animated: true)
             }
         }
+    }
+
+    private func showImportIdiomDialog() {
+        let alert = UIAlertController(
+            title: "导入成语",
+            message: "请输入四字成语，多个成语用空格、逗号或换行分隔。\n只接受四字中文词语。",
+            preferredStyle: .alert
+        )
+        alert.addTextField { textField in
+            textField.placeholder = "例如：一心一意 三心二意"
+            textField.autocapitalizationType = .none
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "导入", style: .default) { [weak self] _ in
+            guard let text = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else { return }
+            let count = CustomIdiomManager.shared.importIdioms(from: text)
+            self?.tableView.reloadData()
+            let message = count > 0 ? "成功导入 \(count) 个成语" : "未识别到有效的四字成语"
+            let resultAlert = UIAlertController(title: "导入结果", message: message, preferredStyle: .alert)
+            resultAlert.addAction(UIAlertAction(title: "确定", style: .default))
+            self?.present(resultAlert, animated: true)
+        })
+        present(alert, animated: true)
     }
 
     /// Generic coin-check and confirmation flow for mini-games.

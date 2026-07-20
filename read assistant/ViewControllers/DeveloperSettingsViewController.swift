@@ -122,11 +122,13 @@ final class DeveloperSettingsViewController: UIViewController {
     private enum GameCoinsRow: Int, CaseIterable {
         case setIdiomChainCost
         case setCharacterMatchCost
+        case setIdiomWordleCost
 
         var title: String {
             switch self {
             case .setIdiomChainCost: return "汉字拼图消耗金币数"
             case .setCharacterMatchCost: return "汉字消消乐消耗金币数"
+            case .setIdiomWordleCost: return "成语猜猜乐消耗金币数"
             }
         }
     }
@@ -366,7 +368,7 @@ extension DeveloperSettingsViewController: UITableViewDataSource {
         case .quizCoins:
             return "自定义闯关消耗和奖励的金币数量。连续完全胜利加成：每次完全胜利额外加1金币（第2连胜+2，第3连胜+3，依此类推）。"
         case .gameCoins:
-            return "自定义小游戏消耗的金币数量。汉字拼图默认10金币，汉字消消乐默认20金币。"
+            return "自定义小游戏消耗的金币数量。汉字拼图默认10金币，汉字消消乐默认20金币，成语猜猜乐默认15金币。"
         case .hearts:
             return "调试用：可开关无限红心模式、修改红心数量和上限、设置恢复时间。"
         }
@@ -718,6 +720,12 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
             cell.detailTextLabel?.text = "当前: \(cost)💰\(hasOverride ? " [自定义]" : " (默认)")"
             cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
             cell.accessoryType = .disclosureIndicator
+        case .setIdiomWordleCost:
+            let cost = devSettings.effectiveIdiomWordleCostCoins
+            let hasOverride = devSettings.idiomWordleCostCoins != nil
+            cell.detailTextLabel?.text = "当前: \(cost)💰\(hasOverride ? " [自定义]" : " (默认)")"
+            cell.detailTextLabel?.textColor = hasOverride ? .primary : .textSecondary
+            cell.accessoryType = .disclosureIndicator
         }
 
         cell.backgroundColor = .cardBackground
@@ -757,6 +765,22 @@ extension DeveloperSettingsViewController: UITableViewDelegate {
                 }
                 self?.tableView.reloadData()
                 self?.showAlert(title: "完成", message: "汉字消消乐消耗已设置为 \(value)💰")
+            }
+
+        case .setIdiomWordleCost:
+            let currentCost = devSettings.effectiveIdiomWordleCostCoins
+            showNumberInput(title: "成语猜猜乐消耗金币数", message: "当前: \(currentCost)💰\n默认: \(DeveloperSettingsManager.defaultIdiomWordleCostCoins)💰", currentValue: "\(currentCost)") { [weak self] value in
+                guard value >= 0 else {
+                    self?.showAlert(title: "错误", message: "消耗金币数不能为负数")
+                    return
+                }
+                if value == DeveloperSettingsManager.defaultIdiomWordleCostCoins {
+                    devSettings.idiomWordleCostCoins = nil
+                } else {
+                    devSettings.idiomWordleCostCoins = value
+                }
+                self?.tableView.reloadData()
+                self?.showAlert(title: "完成", message: "成语猜猜乐消耗已设置为 \(value)💰")
             }
         }
     }

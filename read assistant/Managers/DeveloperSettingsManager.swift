@@ -19,6 +19,7 @@ final class DeveloperSettingsManager {
         static let consecutiveVictoryBonusEnabled = "developer_consecutiveVictoryBonusEnabled"
         static let idiomChainCostCoins = "developer_idiomChainCostCoins"
         static let characterMatchCostCoins = "developer_characterMatchCostCoins"
+        static let idiomWordleCostCoins = "developer_idiomWordleCostCoins"
     }
 
     private init() {}
@@ -51,6 +52,9 @@ final class DeveloperSettingsManager {
 
     /// Default coin cost to play Character Match game.
     static let defaultCharacterMatchCostCoins: Int = 20
+
+    /// Default coin cost to play Idiom Wordle game.
+    static let defaultIdiomWordleCostCoins: Int = 15
 
     // MARK: - Stored Values (Developer Overrides)
 
@@ -165,6 +169,22 @@ final class DeveloperSettingsManager {
         }
     }
 
+    /// Coin cost to play one Idiom Wordle game. Returns nil if default should be used.
+    var idiomWordleCostCoins: Int? {
+        get {
+            let key = Keys.idiomWordleCostCoins
+            guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
+            return UserDefaults.standard.integer(forKey: key)
+        }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: Keys.idiomWordleCostCoins)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.idiomWordleCostCoins)
+            }
+        }
+    }
+
     // MARK: - Effective Values (Developer Override > Default)
 
     /// Effective API key: developer override or hardcoded default.
@@ -221,6 +241,12 @@ final class DeveloperSettingsManager {
         return Self.defaultCharacterMatchCostCoins
     }
 
+    /// Effective coin cost to play one Idiom Wordle game.
+    var effectiveIdiomWordleCostCoins: Int {
+        if let stored = idiomWordleCostCoins, stored >= 0 { return stored }
+        return Self.defaultIdiomWordleCostCoins
+    }
+
     // MARK: - Reset
 
     /// Clears all developer overrides, reverting to defaults.
@@ -234,5 +260,6 @@ final class DeveloperSettingsManager {
         UserDefaults.standard.removeObject(forKey: Keys.consecutiveVictoryBonusEnabled)
         UserDefaults.standard.removeObject(forKey: Keys.idiomChainCostCoins)
         UserDefaults.standard.removeObject(forKey: Keys.characterMatchCostCoins)
+        UserDefaults.standard.removeObject(forKey: Keys.idiomWordleCostCoins)
     }
 }
