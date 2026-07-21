@@ -28,6 +28,7 @@ final class BattlefieldGameViewController: UIViewController {
     private var grenadeCount: Int = 3
     private var kills: Int = 0
     private let totalBots: Int = 8
+    private let ammoCratePositions: [(Float, Float)] = [(10, 0), (-5, 8)]
     private var score: Int = 0
     private var isGameOver: Bool = false
     private var isReloading: Bool = false
@@ -270,6 +271,7 @@ final class BattlefieldGameViewController: UIViewController {
         cameraNode.camera?.xFov = 55
         cameraNode.camera?.yFov = 55
         cameraHolder.addChildNode(cameraNode)
+        scnView.pointOfView = cameraNode
         updateWeaponModel()
         cameraNode.addChildNode(weaponNode)
         
@@ -353,7 +355,7 @@ final class BattlefieldGameViewController: UIViewController {
         bar.translatesAutoresizingMaskIntoConstraints = false; bar.isUserInteractionEnabled = false
         view.addSubview(bar)
         NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: topLayoutGuide.bottomAnchor, constant: 40),
+            bar.topAnchor.constraint(equalTo: topLayoutGuide.bottomAnchor, constant: 46),
             bar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             bar.heightAnchor.constraint(equalToConstant: 28)
         ])
@@ -363,6 +365,7 @@ final class BattlefieldGameViewController: UIViewController {
         healthBg.backgroundColor = UIColor(white: 0, alpha: 0.5)
         healthBg.layer.cornerRadius = 6; healthBg.layer.borderWidth = 1.5
         healthBg.layer.borderColor = UIColor(white: 0.5, alpha: 0.6).cgColor
+        healthBg.clipsToBounds = true
         healthBg.translatesAutoresizingMaskIntoConstraints = false
         healthBg.widthAnchor.constraint(equalToConstant: 170).isActive = true
         healthBg.heightAnchor.constraint(equalToConstant: 24).isActive = true
@@ -372,7 +375,7 @@ final class BattlefieldGameViewController: UIViewController {
         healthBg.addSubview(healthFill)
         NSLayoutConstraint.activate([
             healthFill.leadingAnchor.constraint(equalTo: healthBg.leadingAnchor, constant: 2),
-            healthFill.centerYAnchor.constraint(equalTo: healthBg.centerYAnchor),
+            healthFill.topAnchor.constraint(equalTo: healthBg.topAnchor, constant: 2),
             healthFill.widthAnchor.constraint(equalToConstant: 166), healthFill.heightAnchor.constraint(equalToConstant: 20)
         ])
         healthLabel.text = "❤️ 100"; healthLabel.textColor = .white; healthLabel.font = .boldSystemFont(ofSize: 12)
@@ -391,11 +394,11 @@ final class BattlefieldGameViewController: UIViewController {
         ammoLabel.heightAnchor.constraint(equalToConstant: 28).isActive = true
         bar.addArrangedSubview(ammoLabel)
         
-        killsLabel.text = "💀 0/8"; killsLabel.textColor = .white; killsLabel.font = .boldSystemFont(ofSize: 14)
+        killsLabel.text = "💀 0"; killsLabel.textColor = .white; killsLabel.font = .boldSystemFont(ofSize: 14)
         killsLabel.backgroundColor = UIColor(white: 0, alpha: 0.5); killsLabel.layer.cornerRadius = 6
         killsLabel.layer.borderWidth = 1.5; killsLabel.layer.borderColor = UIColor(white: 0.5, alpha: 0.6).cgColor
         killsLabel.clipsToBounds = true; killsLabel.textAlignment = .center
-        killsLabel.widthAnchor.constraint(equalToConstant: 68).isActive = true
+        killsLabel.widthAnchor.constraint(equalToConstant: 56).isActive = true
         killsLabel.heightAnchor.constraint(equalToConstant: 28).isActive = true
         bar.addArrangedSubview(killsLabel)
         
@@ -415,7 +418,7 @@ final class BattlefieldGameViewController: UIViewController {
         view.addSubview(pauseButton)
         NSLayoutConstraint.activate([
             pauseButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            pauseButton.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 8),
+            pauseButton.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 14),
             pauseButton.widthAnchor.constraint(equalToConstant: 32), pauseButton.heightAnchor.constraint(equalToConstant: 32)
         ])
         
@@ -525,13 +528,15 @@ final class BattlefieldGameViewController: UIViewController {
             scopeOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scopeOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+
+        // Crosshair added directly to view (not scopeOverlay) so the mask doesn't hide it
         let cr: CGFloat = 140
         let cross = UIView(); cross.backgroundColor = .clear; cross.isUserInteractionEnabled = false
         cross.tag = 500
-        cross.translatesAutoresizingMaskIntoConstraints = false; scopeOverlay.addSubview(cross)
+        cross.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(cross)
         NSLayoutConstraint.activate([
-            cross.centerXAnchor.constraint(equalTo: scopeOverlay.centerXAnchor),
-            cross.centerYAnchor.constraint(equalTo: scopeOverlay.centerYAnchor),
+            cross.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            cross.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             cross.widthAnchor.constraint(equalToConstant: cr*2), cross.heightAnchor.constraint(equalToConstant: cr*2)
         ])
         // Draw crosshair via CAShapeLayer for reliable rendering
@@ -539,14 +544,21 @@ final class BattlefieldGameViewController: UIViewController {
         let cp = UIBezierPath()
         cp.move(to: CGPoint(x: cr, y: 20)); cp.addLine(to: CGPoint(x: cr, y: cr*2 - 20))
         cp.move(to: CGPoint(x: 20, y: cr)); cp.addLine(to: CGPoint(x: cr*2 - 20, y: cr))
-        crossLayer.path = cp.cgPath; crossLayer.strokeColor = UIColor.white.withAlphaComponent(0.5).cgColor
+        crossLayer.path = cp.cgPath; crossLayer.strokeColor = UIColor.white.withAlphaComponent(0.7).cgColor
         crossLayer.lineWidth = 2
         cross.layer.addSublayer(crossLayer)
         // Dot in center
         let dotLayer = CAShapeLayer()
         let dotPath = UIBezierPath(ovalIn: CGRect(x: cr - 3, y: cr - 3, width: 6, height: 6))
-        dotLayer.path = dotPath.cgPath; dotLayer.fillColor = UIColor.red.withAlphaComponent(0.6).cgColor
+        dotLayer.path = dotPath.cgPath; dotLayer.fillColor = UIColor.red.withAlphaComponent(0.8).cgColor
         cross.layer.addSublayer(dotLayer)
+        // Circle outline for scope rim
+        let rimLayer = CAShapeLayer()
+        let rimPath = UIBezierPath(ovalIn: CGRect(x: 15, y: 15, width: cr*2 - 30, height: cr*2 - 30))
+        rimLayer.path = rimPath.cgPath; rimLayer.strokeColor = UIColor.black.withAlphaComponent(0.6).cgColor
+        rimLayer.fillColor = UIColor.clear.cgColor; rimLayer.lineWidth = 3
+        cross.layer.addSublayer(rimLayer)
+        cross.alpha = 0
     }
     
     // MARK: - Joystick
@@ -720,9 +732,12 @@ final class BattlefieldGameViewController: UIViewController {
             path.append(UIBezierPath(ovalIn: CGRect(x: b.midX - cr, y: b.midY - cr, width: cr*2, height: cr*2)))
             mask.path = path.cgPath; mask.fillRule = .evenOdd
             scopeOverlay.layer.mask = mask
+        } else {
+            scopeOverlay.layer.mask = nil
         }
         scopeOverlay.alpha = isScoped ? 1 : 0
         crosshairView.isHidden = isScoped
+        view.viewWithTag(500)?.alpha = isScoped ? 1 : 0
     }
 
     @objc private func jumpTap() {
@@ -861,8 +876,9 @@ final class BattlefieldGameViewController: UIViewController {
         currentSlot = .primary; primaryAmmo = curMag; secondaryAmmo = 12
         updateWeaponModel()
         isGameOver = false; isReloading = false; shootCooldown = 0; isShooting = false; healCooldown = 0
-        isJumping = false; isSprinting = false; jumpVelocity = 0; hasDeployed = true
-        playerTickets = 100; enemyTickets = 150; turretAmmo = 100; turretReserve = 300; ticketDrainAccum = 0; updateTicketBars()
+        isJumping = false; isSprinting = false; jumpVelocity = 0
+        if !hasDeployed { playerTickets = 100; enemyTickets = 150; hasDeployed = true }
+        turretAmmo = 100; turretReserve = 300; ticketDrainAccum = 0; updateTicketBars()
         for b in bots { b.node.removeFromParentNode() }; bots.removeAll()
         for b in bullets { b.node.removeFromParentNode() }; bullets.removeAll()
         for p in particleNodes { p.removeFromParentNode() }; particleNodes.removeAll()
@@ -1037,7 +1053,7 @@ final class BattlefieldGameViewController: UIViewController {
         view.addSubview(minimapView)
         NSLayoutConstraint.activate([
             minimapView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            minimapView.topAnchor.constraint(equalTo: topLayoutGuide.bottomAnchor, constant: 100),
+            minimapView.topAnchor.constraint(equalTo: topLayoutGuide.bottomAnchor, constant: 110),
             minimapView.widthAnchor.constraint(equalToConstant: 90), minimapView.heightAnchor.constraint(equalToConstant: 90)
         ])
     }
@@ -1048,7 +1064,7 @@ final class BattlefieldGameViewController: UIViewController {
         view.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            stack.topAnchor.constraint(equalTo: topLayoutGuide.bottomAnchor, constant: 68),
+            stack.topAnchor.constraint(equalTo: topLayoutGuide.bottomAnchor, constant: 82),
             stack.widthAnchor.constraint(equalToConstant: 200), stack.heightAnchor.constraint(equalToConstant: 20)
         ])
         for (i, label) in ["A", "B", "C", "D"].enumerated() {
@@ -1063,54 +1079,88 @@ final class BattlefieldGameViewController: UIViewController {
     }
 
     private func buildTicketBars() {
-        let container = UIStackView(); container.axis = .horizontal; container.spacing = 6
-        container.alignment = .center; container.distribution = .fillEqually
+        // Single wide unified ticket bar at the very top
+        let container = UIView()
+        container.backgroundColor = UIColor(white: 0.08, alpha: 0.75)
+        container.layer.cornerRadius = 7
+        container.layer.borderWidth = 1.5
+        container.layer.borderColor = UIColor(white: 0.4, alpha: 0.6).cgColor
+        container.clipsToBounds = true
         container.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(container)
         NSLayoutConstraint.activate([
-            container.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            container.topAnchor.constraint(equalTo: topLayoutGuide.bottomAnchor, constant: 4),
-            container.widthAnchor.constraint(equalToConstant: 300), container.heightAnchor.constraint(equalToConstant: 28)
+            container.topAnchor.constraint(equalTo: topLayoutGuide.bottomAnchor, constant: 2),
+            container.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            container.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            container.heightAnchor.constraint(equalToConstant: 36)
         ])
-        func makeTicketBar(_ bar: UIView, _ label: UILabel, _ color: UIColor, _ alignRight: Bool) {
-            let bg = UIView(); bg.backgroundColor = UIColor(white: 0, alpha: 0.5)
-            bg.layer.cornerRadius = 5; bg.clipsToBounds = true
-            bg.translatesAutoresizingMaskIntoConstraints = false
-            bar.backgroundColor = color; bar.translatesAutoresizingMaskIntoConstraints = false
-            bg.addSubview(bar)
-            if alignRight {
-                NSLayoutConstraint.activate([
-                    bar.trailingAnchor.constraint(equalTo: bg.trailingAnchor),
-                    bar.topAnchor.constraint(equalTo: bg.topAnchor),
-                    bar.heightAnchor.constraint(equalTo: bg.heightAnchor),
-                    bar.widthAnchor.constraint(equalToConstant: 100)
-                ])
-            } else {
-                NSLayoutConstraint.activate([
-                    bar.leadingAnchor.constraint(equalTo: bg.leadingAnchor),
-                    bar.topAnchor.constraint(equalTo: bg.topAnchor),
-                    bar.heightAnchor.constraint(equalTo: bg.heightAnchor),
-                    bar.widthAnchor.constraint(equalToConstant: 100)
-                ])
-            }
-            label.textColor = .white; label.font = .boldSystemFont(ofSize: 11)
-            label.textAlignment = .center
-            let row = UIStackView(); row.axis = .horizontal; row.spacing = 3; row.alignment = .center
-            if alignRight { row.addArrangedSubview(bg); row.addArrangedSubview(label) }
-            else { row.addArrangedSubview(label); row.addArrangedSubview(bg) }
-            container.addArrangedSubview(row)
-        }
-        makeTicketBar(playerTicketBar, playerTicketLabel, UIColor(red: 0.3, green: 0.5, blue: 0.9, alpha: 1), false)
-        makeTicketBar(enemyTicketBar, enemyTicketLabel, UIColor(red: 0.85, green: 0.2, blue: 0.2, alpha: 1), true)
+
+        // Player ticket bar (blue, left side)
+        playerTicketBar.backgroundColor = UIColor(red: 0.22, green: 0.45, blue: 0.85, alpha: 1)
+        playerTicketBar.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(playerTicketBar)
+        playerTicketBar.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
+        playerTicketBar.topAnchor.constraint(equalTo: container.topAnchor).isActive = true
+        playerTicketBar.bottomAnchor.constraint(equalTo: container.bottomAnchor).isActive = true
+        playerTicketBar.widthAnchor.constraint(equalToConstant: 100).isActive = true
+
+        // Enemy ticket bar (red, right side)
+        enemyTicketBar.backgroundColor = UIColor(red: 0.82, green: 0.18, blue: 0.18, alpha: 1)
+        enemyTicketBar.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(enemyTicketBar)
+        enemyTicketBar.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
+        enemyTicketBar.topAnchor.constraint(equalTo: container.topAnchor).isActive = true
+        enemyTicketBar.bottomAnchor.constraint(equalTo: container.bottomAnchor).isActive = true
+        enemyTicketBar.widthAnchor.constraint(equalToConstant: 100).isActive = true
+
+        // Center divider
+        let divider = UIView()
+        divider.backgroundColor = UIColor(white: 0.25, alpha: 0.8)
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(divider)
+        NSLayoutConstraint.activate([
+            divider.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            divider.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
+            divider.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -2),
+            divider.widthAnchor.constraint(equalToConstant: 2)
+        ])
+
+        // Labels
+        playerTicketLabel.textColor = .white
+        playerTicketLabel.font = .boldSystemFont(ofSize: 13)
+        playerTicketLabel.textAlignment = .center
+        playerTicketLabel.translatesAutoresizingMaskIntoConstraints = false
+        playerTicketBar.addSubview(playerTicketLabel)
+        NSLayoutConstraint.activate([
+            playerTicketLabel.centerXAnchor.constraint(equalTo: playerTicketBar.centerXAnchor),
+            playerTicketLabel.centerYAnchor.constraint(equalTo: playerTicketBar.centerYAnchor)
+        ])
+
+        enemyTicketLabel.textColor = .white
+        enemyTicketLabel.font = .boldSystemFont(ofSize: 13)
+        enemyTicketLabel.textAlignment = .center
+        enemyTicketLabel.translatesAutoresizingMaskIntoConstraints = false
+        enemyTicketBar.addSubview(enemyTicketLabel)
+        NSLayoutConstraint.activate([
+            enemyTicketLabel.centerXAnchor.constraint(equalTo: enemyTicketBar.centerXAnchor),
+            enemyTicketLabel.centerYAnchor.constraint(equalTo: enemyTicketBar.centerYAnchor)
+        ])
+
         updateTicketBars()
     }
 
     private func updateTicketBars() {
-        let pw = 100 * CGFloat(playerTickets) / 100
-        for c in playerTicketBar.constraints where c.firstAttribute == .width { c.constant = pw; break }
-        playerTicketLabel.text = "\(playerTickets)"
-        let ew = 100 * CGFloat(enemyTickets) / 150
-        for c in enemyTicketBar.constraints where c.firstAttribute == .width { c.constant = ew; break }
+        let total = CGFloat(playerTickets + enemyTickets)
+        guard total > 0, let container = playerTicketBar.superview else { return }
+        let playerRatio = CGFloat(playerTickets) / total
+        let containerWidth = container.bounds.width
+        for c in playerTicketBar.constraints where c.firstAttribute == .width {
+            c.constant = max(0, containerWidth * playerRatio); break
+        }
+        for c in enemyTicketBar.constraints where c.firstAttribute == .width {
+            c.constant = max(0, containerWidth * (1 - playerRatio)); break
+        }
+        playerTicketLabel.text = "⚔️ \(playerTickets)"
         enemyTicketLabel.text = "\(enemyTickets)"
     }
 
@@ -1156,6 +1206,13 @@ final class BattlefieldGameViewController: UIViewController {
                 let bz = (CGFloat(bot.node.presentation.position.z) + halfMap) * scale - 1.5
                 ctx.fill(CGRect(x: bx, y: bz, width: 3, height: 3))
             }
+            // Ammo crate markers (gold)
+            UIColor(red: 1, green: 0.85, blue: 0, alpha: 1).setFill()
+            for (ax, az) in ammoCratePositions {
+                let ax2 = (CGFloat(ax) + halfMap) * scale - 2.5
+                let az2 = (CGFloat(az) + halfMap) * scale - 2.5
+                ctx.fill(CGRect(x: ax2, y: az2, width: 5, height: 5))
+            }
             UIColor.white.setFill()
             let px = (CGFloat(cameraHolder.position.x) + halfMap) * scale - 2
             let pz = (CGFloat(cameraHolder.position.z) + halfMap) * scale - 2
@@ -1165,21 +1222,32 @@ final class BattlefieldGameViewController: UIViewController {
     }
 
     private func spawnAmmoCrates() {
-        let ammoPositions: [(Float, Float)] = [(10, 0), (-5, 8)]
-        for (ax, az) in ammoPositions {
+        for (ax, az) in ammoCratePositions {
+            // Glowing marker pole
+            let pole = SCNCylinder(radius: 0.1, height: 1.2)
+            pole.firstMaterial?.diffuse.contents = UIColor(red: 0.2, green: 0.6, blue: 0.2, alpha: 1)
+            pole.firstMaterial?.emission.contents = UIColor(red: 0, green: 0.8, blue: 0, alpha: 1)
+            let poleNode = SCNNode(geometry: pole)
+            poleNode.position = SCNVector3(ax, groundTop + 0.6, az)
+            scene.rootNode.addChildNode(poleNode)
+
+            // Crate box
             let crate = SCNBox(width: 0.8, height: 0.6, length: 0.6, chamferRadius: 0.02)
-            crate.firstMaterial?.diffuse.contents = UIColor(red: 0.6, green: 0.4, blue: 0.1, alpha: 1)
+            crate.firstMaterial?.diffuse.contents = UIColor(red: 0.2, green: 0.55, blue: 0.2, alpha: 1)
+            crate.firstMaterial?.emission.contents = UIColor(red: 0, green: 0.3, blue: 0, alpha: 1)
             let crateNode = SCNNode(geometry: crate)
             crateNode.position = SCNVector3(ax, groundTop + 0.3, az)
             crateNode.name = "ammo"
             scene.rootNode.addChildNode(crateNode)
-            // 3D label above
-            let textGeo = SCNText(string: "🔫", extrusionDepth: 0.02)
-            textGeo.font = UIFont.systemFont(ofSize: 0.3)
+
+            // Floating ammo icon above
+            let textGeo = SCNText(string: "弹药", extrusionDepth: 0.02)
+            textGeo.font = UIFont.boldSystemFont(ofSize: 0.4)
             textGeo.firstMaterial?.diffuse.contents = UIColor.yellow
+            textGeo.firstMaterial?.emission.contents = UIColor(red: 0.3, green: 0.3, blue: 0, alpha: 1)
             let textNode = SCNNode(geometry: textGeo)
-            textNode.position = SCNVector3(ax, groundTop + 0.8, az)
-            textNode.scale = SCNVector3(0.3, 0.3, 0.3)
+            textNode.position = SCNVector3(ax - 0.2, groundTop + 1.2, az)
+            textNode.scale = SCNVector3(0.35, 0.35, 0.35)
             textNode.constraints = [SCNBillboardConstraint()]
             scene.rootNode.addChildNode(textNode)
         }
@@ -1339,7 +1407,6 @@ final class BattlefieldGameViewController: UIViewController {
         SCNTransaction.commit()
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak node] in node?.removeFromParentNode() }
         kills += 1; score += 100; refreshHUD()
-        if kills >= totalBots { score += Int(hp) * 5; refreshHUD(); endGame(won: true) }
     }
 
     private func hurtPlayer(_ dmg: Float) {
@@ -1350,22 +1417,31 @@ final class BattlefieldGameViewController: UIViewController {
         if hp <= 0 {
             playerTickets -= 1; updateTicketBars()
             if playerTickets <= 0 { endGame(won: false) }
-            else { endGame(won: false) } // Show deploy screen
+            else { showDeployScreen() }
         }
     }
     
+    private func showDeployScreen() {
+        isGameOver = true; isShooting = false; inTurret = false; turretButton.isHidden = true
+        let title = gameOverView.viewWithTag(100) as? UILabel
+        let sub = gameOverView.viewWithTag(101) as? UILabel
+        title?.text = "💀 阵亡!"
+        title?.textColor = UIColor(red: 0.95, green: 0.2, blue: 0.2, alpha: 1)
+        sub?.text = "击杀: \(kills)  得分: \(score)  剩余兵力: \(playerTickets)"
+        gameOverView.viewWithTag(102)?.isHidden = false
+        gameOverView.viewWithTag(200)?.isHidden = false
+        UIView.animate(withDuration: 0.4) { self.gameOverView.alpha = 1 }
+    }
+
     private func endGame(won: Bool) {
         isGameOver = true; isShooting = false; inTurret = false; turretButton.isHidden = true
         let title = gameOverView.viewWithTag(100) as? UILabel
         let sub = gameOverView.viewWithTag(101) as? UILabel
-        let deployLabel = gameOverView.viewWithTag(102)
-        // Find class stack (tag 200) and exit button
-        let classStack = gameOverView.viewWithTag(200)
-        title?.text = won ? "🏆 胜利!" : "💀 阵亡!"
+        title?.text = won ? "🏆 胜利!" : "💀 战败!"
         title?.textColor = won ? UIColor(red: 0.3, green: 0.85, blue: 0.3, alpha: 1) : UIColor(red: 0.95, green: 0.2, blue: 0.2, alpha: 1)
-        sub?.text = "击杀: \(kills)/\(totalBots)  得分: \(score)"
-        deployLabel?.isHidden = won
-        classStack?.isHidden = won
+        sub?.text = "击杀: \(kills)  得分: \(score)"
+        gameOverView.viewWithTag(102)?.isHidden = true
+        gameOverView.viewWithTag(200)?.isHidden = true
         UIView.animate(withDuration: 0.4) { self.gameOverView.alpha = 1 }
     }
     
@@ -1379,7 +1455,7 @@ final class BattlefieldGameViewController: UIViewController {
         let ws = weaponStats(); let resText = currentSlot == .grenade ? "" : "/\(curReserve)"
         ammoLabel.text = inTurret ? (isReloading ? "🔄 ..." : "🔫 \(turretAmmo)/\(turretReserve)") :
             (isReloading ? "🔄 ..." : "\(ws.icon) \(curAmmo)\(resText)")
-        killsLabel.text = "💀 \(kills)/\(totalBots)"
+        killsLabel.text = "💀 \(kills)"
         scoreLabel.text = "⭐ \(score)"
         grenadeBtn.setTitle("💣\(grenadeCount)", for: .normal)
     }
@@ -1646,11 +1722,10 @@ final class BattlefieldGameViewController: UIViewController {
     
     /// Returns true if the point (with margin) is inside a barrier.
     private func isInsideBarrier(x: Float, y: Float, z: Float) -> Bool {
-        let r: Float = 0.35  // camera collision radius
-        let eyeY: Float = playerY
+        let r: Float = 0.55  // camera collision radius (increased for safety)
         for box in barrierBoxes {
-            // Only collide if camera eye is within barrier height range
-            if eyeY < box.minY - 0.2 || eyeY > box.maxY + 0.3 { continue }
+            // Only collide if the point is within barrier height range
+            if y < box.minY - 0.15 || y > box.maxY + 0.25 { continue }
             if x + r > box.minX && x - r < box.maxX,
                z + r > box.minZ && z - r < box.maxZ {
                 return true
